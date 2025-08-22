@@ -5,6 +5,7 @@ class WebsiteScanner {
         this.queue = [];
         this.siteMap = new Map();
         this.edges = [];
+        this.pageRelationships = new Map(); // Track parent-child relationships
         this.scanning = false;
         this.startUrl = '';
         this.baseDomain = '';
@@ -188,6 +189,7 @@ class WebsiteScanner {
         this.visited.clear();
         this.siteMap.clear();
         this.edges = [];
+        this.pageRelationships.clear();
         this.pagesScanned = 0;
         
         this.startUrl = this.normalizeUrl(document.getElementById('urlInput').value);
@@ -209,10 +211,10 @@ class WebsiteScanner {
         document.getElementById('stopButton').style.display = 'inline-block';
         
         // Start with the initial URL
-        this.queue.push({ url: this.startUrl, depth: 0 });
+        this.queue.push({ url: this.startUrl, depth: 0, parent: null });
         
         while (this.queue.length > 0 && this.scanning && this.pagesScanned < this.maxPages) {
-            const { url, depth } = this.queue.shift();
+            const { url, depth, parent } = this.queue.shift();
             
             if (this.visited.has(url) || depth > this.maxDepth) {
                 continue;
@@ -220,6 +222,14 @@ class WebsiteScanner {
             
             this.visited.add(url);
             this.pagesScanned++;
+            
+            // Track parent-child relationship
+            if (parent) {
+                if (!this.pageRelationships.has(parent)) {
+                    this.pageRelationships.set(parent, []);
+                }
+                this.pageRelationships.get(parent).push(url);
+            }
             
             // Update progress
             this.updateProgress(url);
@@ -229,12 +239,13 @@ class WebsiteScanner {
             if (html) {
                 const pageData = this.parseHtml(html, url);
                 pageData.depth = depth;
+                pageData.parent = parent;
                 this.siteMap.set(url, pageData);
                 
                 // Add links to queue
                 for (const link of pageData.links) {
                     if (this.shouldCrawl(link)) {
-                        this.queue.push({ url: link, depth: depth + 1 });
+                        this.queue.push({ url: link, depth: depth + 1, parent: url });
                         
                         // Track edge for network graph
                         this.edges.push({ from: url, to: link });
@@ -295,6 +306,9 @@ class WebsiteScanner {
         
         // Create network visualization
         this.createNetworkVisualization();
+        
+        // Build and display sitemap tree
+        this.buildSitemapTree();
         
         // Populate pages table
         this.populatePagesTable();
@@ -443,6 +457,176 @@ class WebsiteScanner {
         }
         return data;
     }
+    
+    buildSitemapTree() {
+        const container = document.getElementById('sitemapTree');
+        container.innerHTML = '';
+        
+        // Build tree structure starting from root URL
+        const tree = this.buildTreeNode(this.startUrl, new Set());
+        
+        // Render the tree
+        if (tree) {
+            container.appendChild(this.renderTreeNode(tree));
+        }
+    }
+    
+    buildTreeNode(url, visited) {
+        if (visited.has(url)) return null;
+        visited.add(url);
+        
+        const pageData = this.siteMap.get(url);
+        if (!pageData) return null;
+        
+        const children = [];
+        const childUrls = this.pageRelationships.get(url) || [];
+        
+        // Only add unique children that haven't been visited
+        const uniqueChildren = [...new Set(childUrls)];
+        for (const childUrl of uniqueChildren) {
+            const childNode = this.buildTreeNode(childUrl, visited);
+            if (childNode) {
+                children.push(childNode);
+            }
+        }
+        
+        return {
+            url,
+            data: pageData,
+            children
+        };
+    }
+    
+    renderTreeNode(node, isRoot = true) {
+        const nodeDiv = document.createElement('div');
+        nodeDiv.className = isRoot ? 'tree-node' : 'tree-node child';
+        
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'tree-item';
+        
+        // Add toggle button if has children
+        const toggleSpan = document.createElement('span');
+        toggleSpan.className = 'tree-toggle';
+        if (node.children.length > 0) {
+            toggleSpan.textContent = '▼';
+            toggleSpan.style.cursor = 'pointer';
+            toggleSpan.onclick = (e) => {
+                e.stopPropagation();
+                const childrenDiv = nodeDiv.querySelector('.tree-children');
+                if (childrenDiv) {
+                    childrenDiv.classList.toggle('expanded');
+                    toggleSpan.textContent = childrenDiv.classList.contains('expanded') ? '▼' : '▶';
+                }
+            };
+        } else {
+            toggleSpan.textContent = '•';
+        }
+        itemDiv.appendChild(toggleSpan);
+        
+        // Add content
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'tree-content';
+        
+        const urlLink = document.createElement('a');
+        urlLink.className = 'tree-url';
+        urlLink.href = node.url;
+        urlLink.target = '_blank';
+        urlLink.textContent = this.getRelativeUrl(node.url);
+        contentDiv.appendChild(urlLink);
+        
+        // Add info badges
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'tree-info';
+        
+        const depthBadge = document.createElement('span');
+        depthBadge.className = 'tree-badge depth';
+        depthBadge.textContent = `Depth: ${node.data.depth}`;
+        infoDiv.appendChild(depthBadge);
+        
+        const linksBadge = document.createElement('span');
+        linksBadge.className = 'tree-badge links';
+        linksBadge.textContent = `${node.data.links.length} links`;
+        infoDiv.appendChild(linksBadge);
+        
+        const typeBadge = document.createElement('span');
+        typeBadge.className = 'tree-badge type';
+        typeBadge.textContent = node.data.pageType;
+        infoDiv.appendChild(typeBadge);
+        
+        contentDiv.appendChild(infoDiv);
+        itemDiv.appendChild(contentDiv);
+        nodeDiv.appendChild(itemDiv);
+        
+        // Add children
+        if (node.children.length > 0) {
+            const childrenDiv = document.createElement('div');
+            childrenDiv.className = 'tree-children expanded';
+            
+            for (const child of node.children) {
+                childrenDiv.appendChild(this.renderTreeNode(child, false));
+            }
+            
+            nodeDiv.appendChild(childrenDiv);
+        }
+        
+        return nodeDiv;
+    }
+    
+    getRelativeUrl(url) {
+        try {
+            const urlObj = new URL(url);
+            return urlObj.pathname + urlObj.search;
+        } catch {
+            return url;
+        }
+    }
+    
+    exportXMLSitemap() {
+        let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+        xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
+        
+        const today = new Date().toISOString().split('T')[0];
+        
+        for (const [url, pageData] of this.siteMap) {
+            xml += '  <url>\n';
+            xml += `    <loc>${this.escapeXML(url)}</loc>\n`;
+            xml += `    <lastmod>${today}</lastmod>\n`;
+            
+            // Set priority based on depth
+            const priority = Math.max(0.1, 1.0 - (pageData.depth * 0.2));
+            xml += `    <priority>${priority.toFixed(1)}</priority>\n`;
+            
+            // Set change frequency based on page type
+            let changefreq = 'monthly';
+            if (pageData.pageType === 'Homepage') changefreq = 'daily';
+            else if (pageData.pageType === 'Blog/Article') changefreq = 'weekly';
+            xml += `    <changefreq>${changefreq}</changefreq>\n`;
+            
+            xml += '  </url>\n';
+        }
+        
+        xml += '</urlset>';
+        
+        const blob = new Blob([xml], { type: 'application/xml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sitemap-${new Date().toISOString().split('T')[0]}.xml`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+    
+    escapeXML(str) {
+        return str.replace(/[<>&'"]/g, (c) => {
+            switch (c) {
+                case '<': return '&lt;';
+                case '>': return '&gt;';
+                case '&': return '&amp;';
+                case '\'': return '&apos;';
+                case '"': return '&quot;';
+            }
+        });
+    }
 }
 
 // Global scanner instance
@@ -500,6 +684,40 @@ function exportCSV() {
     a.download = `website-scan-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+}
+
+function expandAllSitemap() {
+    const treeNodes = document.querySelectorAll('.tree-children');
+    const toggles = document.querySelectorAll('.tree-toggle');
+    
+    treeNodes.forEach(node => {
+        node.classList.add('expanded');
+    });
+    
+    toggles.forEach(toggle => {
+        if (toggle.textContent !== '•') {
+            toggle.textContent = '▼';
+        }
+    });
+}
+
+function collapseAllSitemap() {
+    const treeNodes = document.querySelectorAll('.tree-children');
+    const toggles = document.querySelectorAll('.tree-toggle');
+    
+    treeNodes.forEach(node => {
+        node.classList.remove('expanded');
+    });
+    
+    toggles.forEach(toggle => {
+        if (toggle.textContent !== '•') {
+            toggle.textContent = '▶';
+        }
+    });
+}
+
+function exportXMLSitemap() {
+    scanner.exportXMLSitemap();
 }
 
 // Initialize on page load
