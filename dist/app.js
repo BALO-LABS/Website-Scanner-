@@ -289,14 +289,11 @@ class WebsiteScanner {
         let totalLinks = 0;
         let totalImages = 0;
         let totalWords = 0;
-        const pageTypes = {};
         
         for (const [url, data] of this.siteMap) {
             totalLinks += data.links.length;
             totalImages += data.images;
             totalWords += data.wordCount;
-            
-            pageTypes[data.pageType] = (pageTypes[data.pageType] || 0) + 1;
         }
         
         const avgWords = Math.round(totalWords / this.siteMap.size) || 0;
@@ -307,9 +304,6 @@ class WebsiteScanner {
         document.getElementById('totalImages').textContent = totalImages;
         document.getElementById('avgWords').textContent = avgWords;
         
-        // Create page types chart
-        this.createPageTypesChart(pageTypes);
-        
         // Create network visualization
         this.createNetworkVisualization();
         
@@ -319,51 +313,6 @@ class WebsiteScanner {
         
         // Populate pages table
         this.populatePagesTable();
-    }
-    
-    createPageTypesChart(pageTypes) {
-        const ctx = document.getElementById('pageTypesChart').getContext('2d');
-        
-        // Destroy existing chart if it exists
-        if (window.pageTypesChartInstance) {
-            window.pageTypesChartInstance.destroy();
-        }
-        
-        window.pageTypesChartInstance = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: Object.keys(pageTypes),
-                datasets: [{
-                    data: Object.values(pageTypes),
-                    backgroundColor: [
-                        '#667eea',
-                        '#764ba2',
-                        '#f093fb',
-                        '#4facfe',
-                        '#43e97b',
-                        '#fa709a',
-                        '#feca57'
-                    ],
-                    borderWidth: 2,
-                    borderColor: '#fff'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 15,
-                            font: {
-                                size: 12
-                            }
-                        }
-                    }
-                }
-            }
-        });
     }
     
     createNetworkVisualization() {

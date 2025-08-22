@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Website Scanner - Live Analysis Tool</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/dist/vis-network.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/dist/vis-network.min.css" rel="stylesheet">
     <style>
@@ -202,14 +201,6 @@
         .stat-label {
             color: #666;
             font-size: 14px;
-        }
-        
-        .chart-container {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
         }
         
         .network-container {
@@ -500,11 +491,6 @@
                     <div class="stat-value" id="avgWords">0</div>
                     <div class="stat-label">Words per Page</div>
                 </div>
-            </div>
-            
-            <div class="chart-container">
-                <h3>Page Types Distribution</h3>
-                <canvas id="pageTypesChart"></canvas>
             </div>
             
             <div class="network-container">
