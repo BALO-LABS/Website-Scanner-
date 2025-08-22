@@ -1,0 +1,10 @@
+# 📄 requirements.txt - EXACT versions that work
+# ================================================
+# Save this as requirements.txt in your repository
+
+streamlit==1.29.0
+httpx==0.25.2
+selectolax==0.3.17
+plotly==5.17.0
+pandas==2.1.4
+requests==2.31.0
