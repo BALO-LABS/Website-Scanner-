@@ -275,6 +275,12 @@ class WebsiteScanner {
         document.getElementById('progressSection').style.display = 'none';
         document.getElementById('resultsSection').style.display = 'block';
         
+        // Ensure sitemap container is visible
+        const sitemapContainer = document.querySelector('.sitemap-container');
+        if (sitemapContainer) {
+            sitemapContainer.style.display = 'block';
+        }
+        
         this.displayResults();
     }
     
@@ -308,6 +314,7 @@ class WebsiteScanner {
         this.createNetworkVisualization();
         
         // Build and display sitemap tree
+        console.log('Calling buildSitemapTree...');
         this.buildSitemapTree();
         
         // Populate pages table
@@ -460,14 +467,51 @@ class WebsiteScanner {
     
     buildSitemapTree() {
         const container = document.getElementById('sitemapTree');
+        if (!container) {
+            console.error('Sitemap tree container not found');
+            return;
+        }
+        
         container.innerHTML = '';
+        
+        // Check if we have data
+        if (this.siteMap.size === 0) {
+            container.innerHTML = '<p style="color: #666; padding: 20px;">No pages scanned yet.</p>';
+            return;
+        }
+        
+        console.log('Building sitemap tree with', this.siteMap.size, 'pages');
+        console.log('Page relationships:', this.pageRelationships);
         
         // Build tree structure starting from root URL
         const tree = this.buildTreeNode(this.startUrl, new Set());
         
         // Render the tree
         if (tree) {
+            console.log('Tree built successfully:', tree);
             container.appendChild(this.renderTreeNode(tree));
+        } else {
+            // If no tree could be built, show all pages as a flat list
+            const flatList = document.createElement('div');
+            for (const [url, pageData] of this.siteMap) {
+                const item = document.createElement('div');
+                item.className = 'tree-node';
+                item.innerHTML = `
+                    <div class="tree-item">
+                        <span class="tree-toggle">•</span>
+                        <div class="tree-content">
+                            <a href="${url}" target="_blank" class="tree-url">${this.getRelativeUrl(url)}</a>
+                            <div class="tree-info">
+                                <span class="tree-badge depth">Depth: ${pageData.depth}</span>
+                                <span class="tree-badge links">${pageData.links.length} links</span>
+                                <span class="tree-badge type">${pageData.pageType}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                flatList.appendChild(item);
+            }
+            container.appendChild(flatList);
         }
     }
     
