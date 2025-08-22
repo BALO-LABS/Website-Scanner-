@@ -414,10 +414,10 @@
     <div class="container">
         <div class="header">
             <h1>
-                <span style="font-size: 32px;">🕷️</span>
-                Website Scanner
+                <span style="font-size: 32px;">🤖</span>
+                RAG Data Collector
             </h1>
-            <p>Analyze website structure, content, and relationships with this defensive security tool</p>
+            <p>Extract and structure website content for AI customer service agents</p>
         </div>
         
         <div class="input-section">
@@ -449,7 +449,7 @@
             </div>
             
             <div class="info-message">
-                ⚠️ Note: Due to browser security (CORS), this tool uses proxy services to fetch cross-origin content. Some websites may block proxy requests.
+                🤖 This tool extracts FAQ, documentation, and support content to train AI customer service agents. Higher quality scores indicate better content for RAG systems.
             </div>
             
             <button class="button" id="scanButton" onclick="startScan()">
@@ -477,19 +477,19 @@
                     <div class="stat-label">Pages Scanned</div>
                 </div>
                 <div class="result-card">
-                    <h3>🔗 Total Links</h3>
-                    <div class="stat-value" id="totalLinks">0</div>
-                    <div class="stat-label">Links Found</div>
+                    <h3>❓ Q&A Pairs</h3>
+                    <div class="stat-value" id="totalQA">0</div>
+                    <div class="stat-label">Questions Extracted</div>
                 </div>
                 <div class="result-card">
-                    <h3>🖼️ Total Images</h3>
-                    <div class="stat-value" id="totalImages">0</div>
-                    <div class="stat-label">Images Found</div>
+                    <h3>📚 Support Content</h3>
+                    <div class="stat-value" id="docsPages">0</div>
+                    <div class="stat-label">Help/FAQ/Docs Pages</div>
                 </div>
                 <div class="result-card">
-                    <h3>📝 Avg Word Count</h3>
-                    <div class="stat-value" id="avgWords">0</div>
-                    <div class="stat-label">Words per Page</div>
+                    <h3>⭐ Avg Quality</h3>
+                    <div class="stat-value" id="avgQuality">0%</div>
+                    <div class="stat-label">Content Quality Score</div>
                 </div>
             </div>
             
@@ -516,9 +516,9 @@
                             <th>URL</th>
                             <th>Title</th>
                             <th>Type</th>
-                            <th>Word Count</th>
-                            <th>Links</th>
-                            <th>Images</th>
+                            <th>Quality</th>
+                            <th>Q&A</th>
+                            <th>Words</th>
                         </tr>
                     </thead>
                     <tbody id="pagesTableBody">
@@ -526,8 +526,11 @@
                 </table>
                 
                 <div class="export-buttons">
-                    <button class="button" onclick="exportJSON()">Export JSON</button>
-                    <button class="button" onclick="exportCSV()">Export CSV</button>
+                    <button class="button" onclick="exportForRAG()" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">Export for RAG</button>
+                    <button class="button" onclick="exportMarkdown()">Export Markdown</button>
+                    <button class="button" onclick="exportVectorDB()">Export for VectorDB</button>
+                    <button class="button secondary" onclick="exportJSON()">Export JSON</button>
+                    <button class="button secondary" onclick="exportCSV()">Export CSV</button>
                 </div>
             </div>
         </div>

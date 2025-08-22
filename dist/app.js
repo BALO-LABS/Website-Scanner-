@@ -48,11 +48,42 @@ class WebsiteScanner {
         if (!url || this.visited.has(url)) return false;
         if (!this.isInternalLink(url)) return false;
         
+        const urlLower = url.toLowerCase();
+        
+        // Skip file extensions
         const skipExtensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', 
                               '.zip', '.rar', '.jpg', '.jpeg', '.png', '.gif', '.svg', 
-                              '.mp3', '.mp4', '.avi', '.mov'];
+                              '.mp3', '.mp4', '.avi', '.mov', '.css', '.js'];
         
-        return !skipExtensions.some(ext => url.toLowerCase().includes(ext));
+        if (skipExtensions.some(ext => urlLower.includes(ext))) {
+            return false;
+        }
+        
+        // Skip user-specific and transactional pages
+        const skipPatterns = [
+            '/login', '/logout', '/signin', '/signup', '/register',
+            '/cart', '/checkout', '/payment', '/account', '/profile',
+            '/admin', '/dashboard', '/settings', '/preferences',
+            '/search?', '/filter?', '?sort=', '?page=',
+            '/download/', '/print/'
+        ];
+        
+        if (skipPatterns.some(pattern => urlLower.includes(pattern))) {
+            return false;
+        }
+        
+        // Prioritize customer service content (return true immediately)
+        const priorityPatterns = [
+            '/help', '/support', '/faq', '/documentation', '/docs',
+            '/guide', '/tutorial', '/how-to', '/knowledge',
+            '/troubleshoot', '/api', '/manual', '/resources'
+        ];
+        
+        if (priorityPatterns.some(pattern => urlLower.includes(pattern))) {
+            return true;
+        }
+        
+        return true;
     }
     
     getProxyUrl(url) {
@@ -102,14 +133,19 @@ class WebsiteScanner {
         // Extract title
         const title = doc.querySelector('title')?.textContent?.trim() || 'Untitled';
         
-        // Extract text content
-        const textElements = doc.querySelectorAll('p, div, article, section, main');
-        let textContent = '';
-        textElements.forEach(el => {
-            const text = el.textContent?.trim();
-            if (text) textContent += text + ' ';
-        });
-        const wordCount = textContent.split(/\s+/).filter(word => word.length > 0).length;
+        // Extract meta information for RAG
+        const metaDescription = doc.querySelector('meta[name="description"]')?.content || '';
+        const metaKeywords = doc.querySelector('meta[name="keywords"]')?.content || '';
+        
+        // Extract structured content with better context preservation
+        const fullContent = this.extractFullContent(doc);
+        const wordCount = fullContent.text.split(/\s+/).filter(word => word.length > 0).length;
+        
+        // Extract Q&A pairs (for FAQ pages)
+        const qaItems = this.extractQAPairs(doc);
+        
+        // Extract heading hierarchy for context
+        const headingStructure = this.extractHeadingStructure(doc);
         
         // Extract links
         const links = [];
@@ -127,49 +163,308 @@ class WebsiteScanner {
             }
         });
         
-        // Extract images
-        const images = doc.querySelectorAll('img').length;
+        // Extract images with alt text for context
+        const imageData = this.extractImageData(doc);
         
-        // Extract headings
-        const headings = {
-            h1: doc.querySelectorAll('h1').length,
-            h2: doc.querySelectorAll('h2').length,
-            h3: doc.querySelectorAll('h3').length
-        };
+        // Extract tables and lists for structured data
+        const structuredData = this.extractStructuredData(doc);
         
-        // Classify page type
+        // Classify page type with enhanced categories
         const pageType = this.classifyPageType(currentUrl, doc);
+        
+        // Calculate content quality score
+        const qualityScore = this.calculateQualityScore(fullContent, headingStructure, qaItems, pageType);
+        
+        // Extract schema.org data if present
+        const schemaData = this.extractSchemaData(doc);
         
         return {
             url: currentUrl,
             title,
+            metaDescription,
+            metaKeywords,
+            content: fullContent,
             wordCount,
             links,
-            images,
-            headings,
+            images: imageData.count,
+            imageData,
+            headings: headingStructure,
             pageType,
+            qualityScore,
+            qaItems,
+            structuredData,
+            schemaData,
             depth: 0
         };
     }
     
+    extractFullContent(doc) {
+        // Remove script, style, nav, footer elements
+        const elementsToRemove = doc.querySelectorAll('script, style, nav, footer, header, .navigation, .menu, .sidebar, .advertisement');
+        elementsToRemove.forEach(el => el.remove());
+        
+        // Extract main content areas
+        const contentSelectors = ['main', 'article', '.content', '#content', '.main-content', '[role="main"]'];
+        let mainContent = null;
+        
+        for (const selector of contentSelectors) {
+            mainContent = doc.querySelector(selector);
+            if (mainContent) break;
+        }
+        
+        // Fallback to body if no main content area found
+        if (!mainContent) {
+            mainContent = doc.body;
+        }
+        
+        // Extract paragraphs with context
+        const paragraphs = [];
+        const paragraphElements = mainContent.querySelectorAll('p, li, dd, td, blockquote');
+        paragraphElements.forEach(el => {
+            const text = el.textContent?.trim();
+            if (text && text.length > 20) { // Filter out very short text
+                paragraphs.push(text);
+            }
+        });
+        
+        // Extract all text for full context
+        const fullText = mainContent.textContent?.replace(/\s+/g, ' ').trim() || '';
+        
+        return {
+            text: fullText,
+            paragraphs: paragraphs,
+            cleanedHtml: mainContent.innerHTML
+        };
+    }
+    
+    extractQAPairs(doc) {
+        const qaItems = [];
+        
+        // Method 1: Look for FAQ schema markup
+        const faqSchema = doc.querySelectorAll('[itemtype*="FAQPage"], [itemtype*="Question"]');
+        faqSchema.forEach(item => {
+            const question = item.querySelector('[itemprop="name"]')?.textContent?.trim();
+            const answer = item.querySelector('[itemprop="text"], [itemprop="acceptedAnswer"]')?.textContent?.trim();
+            if (question && answer) {
+                qaItems.push({ question, answer });
+            }
+        });
+        
+        // Method 2: Look for common FAQ patterns
+        const faqContainers = doc.querySelectorAll('.faq, #faq, .qa, .qanda, .questions, dl');
+        faqContainers.forEach(container => {
+            // Check for dt/dd pattern
+            const dts = container.querySelectorAll('dt');
+            dts.forEach((dt, index) => {
+                const dd = dt.nextElementSibling;
+                if (dd && dd.tagName === 'DD') {
+                    qaItems.push({
+                        question: dt.textContent?.trim(),
+                        answer: dd.textContent?.trim()
+                    });
+                }
+            });
+            
+            // Check for h3/h4 followed by div/p pattern
+            const headings = container.querySelectorAll('h3, h4, h5');
+            headings.forEach(heading => {
+                const nextEl = heading.nextElementSibling;
+                if (nextEl && (nextEl.tagName === 'P' || nextEl.tagName === 'DIV')) {
+                    const questionText = heading.textContent?.trim();
+                    if (questionText && questionText.includes('?')) {
+                        qaItems.push({
+                            question: questionText,
+                            answer: nextEl.textContent?.trim()
+                        });
+                    }
+                }
+            });
+        });
+        
+        return qaItems;
+    }
+    
+    extractHeadingStructure(doc) {
+        const structure = [];
+        const headings = doc.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        
+        headings.forEach(heading => {
+            structure.push({
+                level: parseInt(heading.tagName.substring(1)),
+                text: heading.textContent?.trim(),
+                tag: heading.tagName
+            });
+        });
+        
+        return {
+            hierarchy: structure,
+            h1: doc.querySelectorAll('h1').length,
+            h2: doc.querySelectorAll('h2').length,
+            h3: doc.querySelectorAll('h3').length
+        };
+    }
+    
+    extractImageData(doc) {
+        const images = [];
+        const imgElements = doc.querySelectorAll('img');
+        
+        imgElements.forEach(img => {
+            const altText = img.getAttribute('alt')?.trim();
+            const src = img.getAttribute('src');
+            if (altText) {
+                images.push({ src, altText });
+            }
+        });
+        
+        return {
+            count: imgElements.length,
+            withAltText: images.length,
+            images: images
+        };
+    }
+    
+    extractStructuredData(doc) {
+        const tables = [];
+        const lists = [];
+        
+        // Extract tables
+        doc.querySelectorAll('table').forEach(table => {
+            const headers = Array.from(table.querySelectorAll('th')).map(th => th.textContent?.trim());
+            const rows = Array.from(table.querySelectorAll('tr')).map(tr => 
+                Array.from(tr.querySelectorAll('td')).map(td => td.textContent?.trim())
+            ).filter(row => row.length > 0);
+            
+            if (headers.length > 0 || rows.length > 0) {
+                tables.push({ headers, rows });
+            }
+        });
+        
+        // Extract lists
+        doc.querySelectorAll('ul, ol').forEach(list => {
+            const items = Array.from(list.querySelectorAll('li')).map(li => li.textContent?.trim());
+            if (items.length > 0) {
+                lists.push({
+                    type: list.tagName.toLowerCase(),
+                    items: items
+                });
+            }
+        });
+        
+        return { tables, lists };
+    }
+    
+    extractSchemaData(doc) {
+        const schemaScripts = doc.querySelectorAll('script[type="application/ld+json"]');
+        const schemas = [];
+        
+        schemaScripts.forEach(script => {
+            try {
+                const data = JSON.parse(script.textContent);
+                schemas.push(data);
+            } catch {}
+        });
+        
+        return schemas;
+    }
+    
+    calculateQualityScore(content, headings, qaItems, pageType) {
+        let score = 0;
+        
+        // Content length score (longer content usually more informative)
+        if (content.text.length > 500) score += 20;
+        if (content.text.length > 1500) score += 20;
+        if (content.text.length > 3000) score += 10;
+        
+        // Structure score (well-organized content)
+        if (headings.hierarchy.length > 3) score += 15;
+        if (headings.h2 > 2) score += 10;
+        
+        // Q&A content score (valuable for customer service)
+        if (qaItems.length > 0) score += 25;
+        if (qaItems.length > 5) score += 15;
+        
+        // Page type bonus
+        const valuableTypes = ['FAQ', 'Documentation', 'Guide', 'Support', 'Help'];
+        if (valuableTypes.includes(pageType)) score += 20;
+        
+        // Normalize to 0-100
+        return Math.min(100, score);
+    }
+    
     classifyPageType(url, doc) {
         const urlLower = url.toLowerCase();
+        const title = doc.querySelector('title')?.textContent?.toLowerCase() || '';
+        const bodyText = doc.body?.textContent?.toLowerCase() || '';
         
-        if (urlLower.includes('/blog') || urlLower.includes('/post') || urlLower.includes('/article')) {
-            return 'Blog/Article';
+        // High priority customer service pages
+        if (urlLower.includes('/faq') || urlLower.includes('/faqs') || 
+            title.includes('frequently asked') || title.includes('faq')) {
+            return 'FAQ';
         }
-        if (urlLower.includes('/product') || urlLower.includes('/shop') || urlLower.includes('/store')) {
+        
+        if (urlLower.includes('/help') || urlLower.includes('/support') || 
+            urlLower.includes('/customer-service') || urlLower.includes('/assistance')) {
+            return 'Support';
+        }
+        
+        if (urlLower.includes('/documentation') || urlLower.includes('/docs') || 
+            urlLower.includes('/manual') || urlLower.includes('/user-guide')) {
+            return 'Documentation';
+        }
+        
+        if (urlLower.includes('/guide') || urlLower.includes('/how-to') || 
+            urlLower.includes('/tutorial') || urlLower.includes('/getting-started')) {
+            return 'Guide';
+        }
+        
+        if (urlLower.includes('/troubleshoot') || urlLower.includes('/problem') || 
+            urlLower.includes('/solution') || urlLower.includes('/fix')) {
+            return 'Troubleshooting';
+        }
+        
+        if (urlLower.includes('/api') || urlLower.includes('/developer') || 
+            urlLower.includes('/reference')) {
+            return 'API Documentation';
+        }
+        
+        if (urlLower.includes('/knowledge') || urlLower.includes('/kb') || 
+            urlLower.includes('/resources')) {
+            return 'Knowledge Base';
+        }
+        
+        if (urlLower.includes('/policy') || urlLower.includes('/terms') || 
+            urlLower.includes('/privacy') || urlLower.includes('/legal')) {
+            return 'Legal/Policy';
+        }
+        
+        // Standard page types
+        if (urlLower.includes('/product') || urlLower.includes('/shop') || 
+            urlLower.includes('/store') || urlLower.includes('/catalog')) {
             return 'Product';
         }
-        if (urlLower.includes('/about')) {
-            return 'About';
-        }
-        if (urlLower.includes('/contact')) {
-            return 'Contact';
-        }
-        if (urlLower.includes('/service')) {
+        
+        if (urlLower.includes('/service') || urlLower.includes('/offering')) {
             return 'Service';
         }
+        
+        if (urlLower.includes('/contact') || urlLower.includes('/reach-us')) {
+            return 'Contact';
+        }
+        
+        if (urlLower.includes('/about') || urlLower.includes('/company')) {
+            return 'About';
+        }
+        
+        if (urlLower.includes('/blog') || urlLower.includes('/post') || 
+            urlLower.includes('/article') || urlLower.includes('/news')) {
+            return 'Blog/Article';
+        }
+        
+        if (urlLower.includes('/review') || urlLower.includes('/testimonial') || 
+            urlLower.includes('/feedback')) {
+            return 'Reviews';
+        }
+        
         if (urlLower === this.startUrl || urlLower === this.startUrl + '/') {
             return 'Homepage';
         }
@@ -179,6 +474,13 @@ class WebsiteScanner {
         if (ogType) {
             if (ogType.includes('article')) return 'Blog/Article';
             if (ogType.includes('product')) return 'Product';
+            if (ogType.includes('faq')) return 'FAQ';
+        }
+        
+        // Content-based classification
+        if (bodyText.includes('frequently asked questions') || 
+            doc.querySelectorAll('[itemtype*="FAQPage"]').length > 0) {
+            return 'FAQ';
         }
         
         return 'Other';
@@ -287,22 +589,32 @@ class WebsiteScanner {
     displayResults() {
         // Calculate statistics
         let totalLinks = 0;
-        let totalImages = 0;
+        let totalQA = 0;
         let totalWords = 0;
+        let faqPages = 0;
+        let docsPages = 0;
+        let avgQualityScore = 0;
         
         for (const [url, data] of this.siteMap) {
             totalLinks += data.links.length;
-            totalImages += data.images;
             totalWords += data.wordCount;
+            totalQA += data.qaItems?.length || 0;
+            avgQualityScore += data.qualityScore || 0;
+            
+            // Count specific page types
+            if (data.pageType === 'FAQ') faqPages++;
+            if (data.pageType === 'Documentation' || data.pageType === 'Guide' || 
+                data.pageType === 'Support' || data.pageType === 'Help') docsPages++;
         }
         
         const avgWords = Math.round(totalWords / this.siteMap.size) || 0;
+        avgQualityScore = Math.round(avgQualityScore / this.siteMap.size) || 0;
         
         // Update statistics cards
         document.getElementById('totalPages').textContent = this.siteMap.size;
-        document.getElementById('totalLinks').textContent = totalLinks;
-        document.getElementById('totalImages').textContent = totalImages;
-        document.getElementById('avgWords').textContent = avgWords;
+        document.getElementById('totalQA').textContent = totalQA;
+        document.getElementById('docsPages').textContent = docsPages + faqPages;
+        document.getElementById('avgQuality').textContent = avgQualityScore + '%';
         
         // Create network visualization
         this.createNetworkVisualization();
@@ -384,15 +696,29 @@ class WebsiteScanner {
         const tbody = document.getElementById('pagesTableBody');
         tbody.innerHTML = '';
         
-        for (const [url, data] of this.siteMap) {
+        // Sort by quality score descending
+        const sortedPages = Array.from(this.siteMap.entries()).sort((a, b) => {
+            return (b[1].qualityScore || 0) - (a[1].qualityScore || 0);
+        });
+        
+        for (const [url, data] of sortedPages) {
             const row = document.createElement('tr');
+            
+            // Color code quality score
+            const qualityColor = data.qualityScore >= 70 ? '#43e97b' : 
+                               data.qualityScore >= 40 ? '#feca57' : '#fa709a';
+            
+            // Color code page type based on value for RAG
+            const typeColor = ['FAQ', 'Documentation', 'Guide', 'Support', 'Help'].includes(data.pageType) 
+                            ? '#667eea' : '#999';
+            
             row.innerHTML = `
                 <td><a href="${url}" target="_blank" style="color: #667eea;">${url.substring(0, 50)}...</a></td>
                 <td>${data.title.substring(0, 40)}${data.title.length > 40 ? '...' : ''}</td>
-                <td><span style="padding: 4px 8px; background: #f0f0f0; border-radius: 4px; font-size: 12px;">${data.pageType}</span></td>
+                <td><span style="padding: 4px 8px; background: ${typeColor}20; color: ${typeColor}; border-radius: 4px; font-size: 12px; font-weight: 600;">${data.pageType}</span></td>
+                <td><span style="color: ${qualityColor}; font-weight: bold;">${data.qualityScore || 0}%</span></td>
+                <td>${data.qaItems?.length || 0}</td>
                 <td>${data.wordCount}</td>
-                <td>${data.links.length}</td>
-                <td>${data.images}</td>
             `;
             tbody.appendChild(row);
         }
@@ -412,6 +738,214 @@ class WebsiteScanner {
             });
         }
         return data;
+    }
+    
+    // Content chunking for RAG
+    chunkContent(text, chunkSize = 500, overlap = 50) {
+        const words = text.split(/\s+/);
+        const chunks = [];
+        
+        for (let i = 0; i < words.length; i += chunkSize - overlap) {
+            const chunk = words.slice(i, i + chunkSize).join(' ');
+            if (chunk.trim().length > 50) { // Minimum chunk size
+                chunks.push(chunk);
+            }
+        }
+        
+        return chunks;
+    }
+    
+    // Export for RAG systems
+    exportForRAG() {
+        const documents = [];
+        
+        for (const [url, pageData] of this.siteMap) {
+            // Skip low quality content
+            if (pageData.qualityScore < 30) continue;
+            
+            // Create chunks from paragraphs
+            const chunks = [];
+            if (pageData.content && pageData.content.paragraphs) {
+                pageData.content.paragraphs.forEach(paragraph => {
+                    if (paragraph.length > 100) {
+                        chunks.push(paragraph);
+                    }
+                });
+            }
+            
+            // Add Q&A items as separate chunks
+            if (pageData.qaItems && pageData.qaItems.length > 0) {
+                pageData.qaItems.forEach(qa => {
+                    chunks.push(`Question: ${qa.question}\nAnswer: ${qa.answer}`);
+                });
+            }
+            
+            const doc = {
+                id: `${this.baseDomain}_${url.replace(/[^a-zA-Z0-9]/g, '_')}`,
+                url: url,
+                title: pageData.title,
+                type: pageData.pageType,
+                content: pageData.content?.text || '',
+                chunks: chunks,
+                metadata: {
+                    description: pageData.metaDescription,
+                    keywords: pageData.metaKeywords,
+                    pageType: pageData.pageType,
+                    qualityScore: pageData.qualityScore,
+                    wordCount: pageData.wordCount,
+                    depth: pageData.depth,
+                    qaCount: pageData.qaItems?.length || 0,
+                    headings: pageData.headings?.hierarchy?.map(h => h.text) || [],
+                    tables: pageData.structuredData?.tables?.length || 0,
+                    lists: pageData.structuredData?.lists?.length || 0,
+                    schemaTypes: pageData.schemaData?.map(s => s['@type']).filter(Boolean) || []
+                }
+            };
+            
+            documents.push(doc);
+        }
+        
+        const ragData = {
+            source: this.startUrl,
+            domain: this.baseDomain,
+            crawlDate: new Date().toISOString(),
+            totalPages: documents.length,
+            documents: documents
+        };
+        
+        const blob = new Blob([JSON.stringify(ragData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `rag-data-${this.baseDomain}-${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+    
+    // Export as Markdown for documentation
+    exportMarkdown() {
+        let markdown = `# ${this.baseDomain} Content Export\n\n`;
+        markdown += `Generated: ${new Date().toISOString()}\n\n`;
+        markdown += `## Table of Contents\n\n`;
+        
+        // Group by page type
+        const pagesByType = {};
+        for (const [url, pageData] of this.siteMap) {
+            const type = pageData.pageType;
+            if (!pagesByType[type]) pagesByType[type] = [];
+            pagesByType[type].push({ url, data: pageData });
+        }
+        
+        // Create TOC
+        Object.keys(pagesByType).forEach(type => {
+            markdown += `- [${type}](#${type.toLowerCase().replace(/\s+/g, '-')})\n`;
+        });
+        
+        markdown += '\n---\n\n';
+        
+        // Add content for each page type
+        Object.entries(pagesByType).forEach(([type, pages]) => {
+            markdown += `## ${type}\n\n`;
+            
+            pages.forEach(({ url, data }) => {
+                markdown += `### ${data.title}\n\n`;
+                markdown += `**URL:** ${url}\n`;
+                markdown += `**Quality Score:** ${data.qualityScore}/100\n\n`;
+                
+                if (data.metaDescription) {
+                    markdown += `**Description:** ${data.metaDescription}\n\n`;
+                }
+                
+                // Add Q&A items
+                if (data.qaItems && data.qaItems.length > 0) {
+                    markdown += `#### Q&A Items\n\n`;
+                    data.qaItems.forEach(qa => {
+                        markdown += `**Q:** ${qa.question}\n`;
+                        markdown += `**A:** ${qa.answer}\n\n`;
+                    });
+                }
+                
+                // Add content preview
+                if (data.content && data.content.paragraphs && data.content.paragraphs.length > 0) {
+                    markdown += `#### Content Preview\n\n`;
+                    markdown += data.content.paragraphs.slice(0, 3).join('\n\n');
+                    markdown += '\n\n';
+                }
+                
+                markdown += '---\n\n';
+            });
+        });
+        
+        const blob = new Blob([markdown], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `content-${this.baseDomain}-${new Date().toISOString().split('T')[0]}.md`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+    
+    // Export for vector databases
+    exportVectorDB() {
+        const vectors = [];
+        
+        for (const [url, pageData] of this.siteMap) {
+            // Skip low quality content
+            if (pageData.qualityScore < 30) continue;
+            
+            // Create vector entries from content chunks
+            if (pageData.content && pageData.content.paragraphs) {
+                pageData.content.paragraphs.forEach((paragraph, idx) => {
+                    if (paragraph.length > 100) {
+                        vectors.push({
+                            id: `${url}_chunk_${idx}`,
+                            text: paragraph,
+                            metadata: {
+                                url: url,
+                                title: pageData.title,
+                                pageType: pageData.pageType,
+                                chunkIndex: idx,
+                                totalChunks: pageData.content.paragraphs.length
+                            }
+                        });
+                    }
+                });
+            }
+            
+            // Create vector entries from Q&A
+            if (pageData.qaItems && pageData.qaItems.length > 0) {
+                pageData.qaItems.forEach((qa, idx) => {
+                    vectors.push({
+                        id: `${url}_qa_${idx}`,
+                        text: `${qa.question} ${qa.answer}`,
+                        metadata: {
+                            url: url,
+                            title: pageData.title,
+                            pageType: 'FAQ',
+                            isQA: true,
+                            question: qa.question,
+                            answer: qa.answer
+                        }
+                    });
+                });
+            }
+        }
+        
+        const vectorData = {
+            source: this.startUrl,
+            domain: this.baseDomain,
+            exportDate: new Date().toISOString(),
+            totalVectors: vectors.length,
+            vectors: vectors
+        };
+        
+        const blob = new Blob([JSON.stringify(vectorData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `vectors-${this.baseDomain}-${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
     }
     
     buildSitemapTree() {
@@ -711,6 +1245,18 @@ function collapseAllSitemap() {
 
 function exportXMLSitemap() {
     scanner.exportXMLSitemap();
+}
+
+function exportForRAG() {
+    scanner.exportForRAG();
+}
+
+function exportMarkdown() {
+    scanner.exportMarkdown();
+}
+
+function exportVectorDB() {
+    scanner.exportVectorDB();
 }
 
 // Initialize on page load
