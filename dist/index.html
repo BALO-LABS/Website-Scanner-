@@ -426,6 +426,10 @@
             </div>
             
             <div class="controls">
+                <div class="info-note" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px; border-radius: 8px; margin-bottom: 10px; text-align: center;">
+                    <strong>🔬 Comprehensive Website Analysis</strong><br>
+                    <small>Automatically runs all 42+ mapping methods and combines results</small>
+                </div>
                 <div class="control-item">
                     <label for="maxPages">Max Pages</label>
                     <input type="number" id="maxPages" value="50" min="1" max="500">
@@ -477,19 +481,64 @@
                     <div class="stat-label">Pages Scanned</div>
                 </div>
                 <div class="result-card">
-                    <h3>❓ Q&A Pairs</h3>
-                    <div class="stat-value" id="totalQA">0</div>
-                    <div class="stat-label">Questions Extracted</div>
-                </div>
-                <div class="result-card">
-                    <h3>📚 Support Content</h3>
-                    <div class="stat-value" id="docsPages">0</div>
-                    <div class="stat-label">Help/FAQ/Docs Pages</div>
+                    <h3>🔗 Total Links</h3>
+                    <div class="stat-value" id="totalLinks">0</div>
+                    <div class="stat-label">Links Discovered</div>
                 </div>
                 <div class="result-card">
                     <h3>⭐ Avg Quality</h3>
                     <div class="stat-value" id="avgQuality">0%</div>
                     <div class="stat-label">Content Quality Score</div>
+                </div>
+                <div class="result-card">
+                    <h3>📏 Max Depth</h3>
+                    <div class="stat-value" id="maxDepthResult">0</div>
+                    <div class="stat-label">Crawl Depth Reached</div>
+                </div>
+                <div class="result-card">
+                    <h3>🏆 Top PageRank</h3>
+                    <div class="stat-value" id="topPageRank">0.000</div>
+                    <div class="stat-label">Highest Authority Score</div>
+                </div>
+                <div class="result-card">
+                    <h3>📝 Total Words</h3>
+                    <div class="stat-value" id="totalWords">0</div>
+                    <div class="stat-label">Content Words</div>
+                </div>
+                <div class="result-card">
+                    <h3>🖼️ Images</h3>
+                    <div class="stat-value" id="totalImages">0</div>
+                    <div class="stat-label">Images Found</div>
+                </div>
+                <div class="result-card">
+                    <h3>🔧 Technologies</h3>
+                    <div class="stat-value" id="techCount">0</div>
+                    <div class="stat-label">Detected</div>
+                </div>
+            </div>
+
+            <!-- Advanced Analysis Results (only shown for comprehensive mode) -->
+            <div id="advancedResults" style="display: none;">
+                <div class="result-card" style="grid-column: 1 / -1; margin: 20px 0;">
+                    <h3>🔬 Advanced Analysis Results</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 15px;">
+                        <div>
+                            <h4>🤖 Discovery Methods</h4>
+                            <div id="discoveryMethods"></div>
+                        </div>
+                        <div>
+                            <h4>📊 Authority Analysis</h4>
+                            <div id="authorityAnalysis"></div>
+                        </div>
+                        <div>
+                            <h4>📝 Content Distribution</h4>
+                            <div id="contentDistribution"></div>
+                        </div>
+                        <div>
+                            <h4>🔧 Technology Stack</h4>
+                            <div id="technologyStack"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -517,8 +566,10 @@
                             <th>Title</th>
                             <th>Type</th>
                             <th>Quality</th>
-                            <th>Q&A</th>
+                            <th>PageRank</th>
+                            <th>Links In/Out</th>
                             <th>Words</th>
+                            <th>Depth</th>
                         </tr>
                     </thead>
                     <tbody id="pagesTableBody">
@@ -527,10 +578,12 @@
                 
                 <div class="export-buttons">
                     <button class="button" onclick="exportForRAG()" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">Export for RAG</button>
+                    <button class="button" onclick="exportComprehensiveMap()" style="background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);">📊 Export Comprehensive Map</button>
                     <button class="button" onclick="exportMarkdown()">Export Markdown</button>
                     <button class="button" onclick="exportVectorDB()">Export for VectorDB</button>
                     <button class="button secondary" onclick="exportJSON()">Export JSON</button>
                     <button class="button secondary" onclick="exportCSV()">Export CSV</button>
+                    <button class="button secondary" onclick="exportXMLSitemap()">XML Sitemap</button>
                 </div>
             </div>
         </div>

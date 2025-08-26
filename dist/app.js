@@ -1,4 +1,6 @@
-// Website Scanner Application
+// Website Scanner Application with Comprehensive Mapping Support
+let comprehensiveMapData = null;
+
 class WebsiteScanner {
     constructor() {
         this.visited = new Set();
@@ -1160,8 +1162,137 @@ class WebsiteScanner {
 let scanner = new WebsiteScanner();
 
 // UI Functions
-function startScan() {
-    scanner.crawl();
+async function startScan() {
+    const url = document.getElementById('urlInput').value.trim();
+    
+    if (!url) {
+        alert('Please enter a valid URL');
+        return;
+    }
+    
+    // Show progress section
+    document.getElementById('progressSection').style.display = 'block';
+    document.getElementById('resultsSection').style.display = 'none';
+    document.getElementById('scanButton').disabled = true;
+    document.getElementById('stopButton').style.display = 'inline-block';
+    
+    // Update progress
+    updateProgress(0, 'Initializing comprehensive analysis...');
+    
+    try {
+        // Always run comprehensive analysis (all 42+ methods)
+        await runComprehensiveAnalysis(url);
+    } catch (error) {
+        console.error('Scan failed:', error);
+        alert('Scan failed: ' + error.message);
+        finishScanning();
+    }
+}
+
+async function runComprehensiveAnalysis(url) {
+    try {
+        updateProgress(10, 'Starting comprehensive analysis...');
+        
+        const options = {
+            maxPages: parseInt(document.getElementById('maxPages').value) || 50,
+            maxDepth: parseInt(document.getElementById('maxDepth').value) || 3,
+            timeout: 15000
+        };
+        
+        updateProgress(20, 'Discovery phase: robots.txt, sitemaps, RSS feeds...');
+        
+        // Make request to comprehensive mapping API
+        const response = await fetch('/api/generate-comprehensive-map', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ url, options })
+        });
+        
+        if (!response.ok) {
+            // Fallback to client-side scanning if API not available
+            console.warn('API not available, falling back to client-side scanning');
+            updateProgress(30, 'API unavailable, using fallback method...');
+            scanner.crawl();
+            return;
+        }
+        
+        updateProgress(50, 'Crawling phase: processing all discovered pages...');
+        
+        comprehensiveMapData = await response.json();
+        
+        updateProgress(70, 'Analysis phase: PageRank, HITS, technology detection...');
+        
+        displayComprehensiveResults(comprehensiveMapData);
+        
+        updateProgress(100, 'Complete! All 42+ methods executed successfully!');
+        
+        // Show results after a brief delay
+        setTimeout(() => {
+            document.getElementById('progressSection').style.display = 'none';
+            document.getElementById('resultsSection').style.display = 'block';
+            document.getElementById('advancedResults').style.display = 'block';
+            finishScanning();
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Comprehensive analysis failed:', error);
+        updateProgress(0, 'Analysis failed: ' + error.message);
+        finishScanning();
+    }
+}
+
+async function runQuickSitemap(url) {
+    try {
+        updateProgress(20, 'Generating quick sitemap...');
+        
+        const response = await fetch('/api/generate-sitemap', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                url, 
+                maxPages: 100,
+                format: 'json'
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to generate sitemap');
+        }
+        
+        const sitemapData = await response.json();
+        
+        updateProgress(80, 'Processing sitemap...');
+        
+        displaySitemapResults(sitemapData);
+        
+        updateProgress(100, 'Sitemap generated!');
+        
+        setTimeout(() => {
+            document.getElementById('progressSection').style.display = 'none';
+            document.getElementById('resultsSection').style.display = 'block';
+            finishScanning();
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Sitemap generation failed:', error);
+        updateProgress(0, 'Sitemap generation failed: ' + error.message);
+        finishScanning();
+    }
+}
+
+function updateProgress(percent, message) {
+    document.getElementById('progressFill').style.width = percent + '%';
+    document.getElementById('progressFill').textContent = percent + '%';
+    document.getElementById('statusText').textContent = message;
+}
+
+function finishScanning() {
+    document.getElementById('scanButton').disabled = false;
+    document.getElementById('stopButton').style.display = 'none';
 }
 
 function stopScan() {
@@ -1257,6 +1388,225 @@ function exportMarkdown() {
 
 function exportVectorDB() {
     scanner.exportVectorDB();
+}
+
+// Display comprehensive mapping results
+function displayComprehensiveResults(mapData) {
+    if (!mapData) return;
+    
+    // Update main statistics
+    document.getElementById('totalPages').textContent = mapData.pages.length;
+    document.getElementById('totalQA').textContent = mapData.pages.reduce((sum, p) => sum + (p.qaItems?.length || 0), 0);
+    document.getElementById('docsPages').textContent = mapData.pages.filter(p => 
+        ['FAQ', 'Documentation', 'Guide', 'Support', 'Help'].includes(p.pageType)
+    ).length;
+    document.getElementById('avgQuality').textContent = mapData.contentAnalysis.averageQualityScore.toFixed(1) + '%';
+    
+    // Display discovery methods
+    const discoveryContainer = document.getElementById('discoveryMethods');
+    if (discoveryContainer && mapData.analysisSummary.discoveryMethods) {
+        const methods = mapData.analysisSummary.discoveryMethods;
+        discoveryContainer.innerHTML = `
+            <div class="discovery-item">
+                <span class="discovery-label">robots.txt:</span>
+                <span class="discovery-value">${methods.robotsTxt}</span>
+            </div>
+            <div class="discovery-item">
+                <span class="discovery-label">Sitemaps:</span>
+                <span class="discovery-value">${methods.sitemaps} found</span>
+            </div>
+            <div class="discovery-item">
+                <span class="discovery-label">RSS Feeds:</span>
+                <span class="discovery-value">${methods.rssFeeds} found</span>
+            </div>
+            <div class="discovery-item">
+                <span class="discovery-label">API Endpoints:</span>
+                <span class="discovery-value">${methods.apiEndpoints} found</span>
+            </div>
+        `;
+    }
+    
+    // Display authority analysis
+    const authorityContainer = document.getElementById('authorityAnalysis');
+    if (authorityContainer && mapData.authorityAnalysis) {
+        const auth = mapData.authorityAnalysis;
+        let authorityHTML = '<h4>Top Pages by PageRank:</h4><ul>';
+        auth.topPagesByRank.slice(0, 5).forEach((page, i) => {
+            const url = new URL(page.url);
+            authorityHTML += `<li>${i + 1}. ${url.pathname} (${page.score.toFixed(3)})</li>`;
+        });
+        authorityHTML += '</ul>';
+        
+        if (auth.communities) {
+            authorityHTML += `<p><strong>Communities:</strong> ${auth.communities} detected</p>`;
+        }
+        
+        authorityContainer.innerHTML = authorityHTML;
+    }
+    
+    // Display technical analysis
+    const techContainer = document.getElementById('technicalAnalysis');
+    if (techContainer && mapData.technicalAnalysis) {
+        const tech = mapData.technicalAnalysis;
+        let techHTML = '<div class="tech-grid">';
+        
+        if (tech.technologies.cms && tech.technologies.cms.length > 0) {
+            techHTML += `<div class="tech-item"><strong>CMS:</strong> ${tech.technologies.cms.join(', ')}</div>`;
+        }
+        if (tech.technologies.frameworks && tech.technologies.frameworks.length > 0) {
+            techHTML += `<div class="tech-item"><strong>Frameworks:</strong> ${tech.technologies.frameworks.join(', ')}</div>`;
+        }
+        if (tech.technologies.analytics && tech.technologies.analytics.length > 0) {
+            techHTML += `<div class="tech-item"><strong>Analytics:</strong> ${tech.technologies.analytics.join(', ')}</div>`;
+        }
+        if (tech.technologies.cdn && tech.technologies.cdn.length > 0) {
+            techHTML += `<div class="tech-item"><strong>CDN:</strong> ${tech.technologies.cdn.join(', ')}</div>`;
+        }
+        
+        techHTML += '</div>';
+        
+        if (tech.performanceMetrics) {
+            const perf = tech.performanceMetrics;
+            techHTML += `
+                <div class="performance-metrics">
+                    <h5>Performance Metrics:</h5>
+                    <p><strong>Average Load Time:</strong> ${perf.avgLoadTime}ms</p>
+                    <p><strong>Error Rate:</strong> ${perf.errorRate}%</p>
+                </div>
+            `;
+        }
+        
+        techContainer.innerHTML = techHTML;
+    }
+    
+    // Populate pages table with comprehensive data
+    populateComprehensiveTable(mapData.pages);
+    
+    // Create visualizations if data available
+    if (mapData.visualizations && mapData.visualizations.networkGraph) {
+        createComprehensiveNetwork(mapData.visualizations.networkGraph);
+    }
+}
+
+// Display sitemap results (quick mode)
+function displaySitemapResults(sitemapData) {
+    if (!sitemapData) return;
+    
+    // Update statistics
+    document.getElementById('totalPages').textContent = sitemapData.pages?.length || 0;
+    document.getElementById('totalQA').textContent = 0; // Quick mode doesn't extract content
+    document.getElementById('docsPages').textContent = 0;
+    document.getElementById('avgQuality').textContent = 'N/A';
+    
+    // Hide advanced analysis sections
+    const advancedSections = document.querySelectorAll('.advanced-only');
+    advancedSections.forEach(section => {
+        section.style.display = 'none';
+    });
+    
+    // Show basic sitemap
+    if (sitemapData.pages && sitemapData.pages.length > 0) {
+        populateBasicSitemapTable(sitemapData.pages);
+    }
+}
+
+// Populate comprehensive results table
+function populateComprehensiveTable(pages) {
+    const tbody = document.getElementById('pagesTableBody');
+    tbody.innerHTML = '';
+    
+    // Sort by PageRank or quality score descending
+    pages.sort((a, b) => (b.pageRank || b.qualityScore || 0) - (a.pageRank || a.qualityScore || 0));
+    
+    pages.forEach(page => {
+        const row = document.createElement('tr');
+        
+        // Color code quality score
+        const quality = page.qualityScore || 0;
+        const qualityColor = quality >= 70 ? '#43e97b' : quality >= 40 ? '#feca57' : '#fa709a';
+        
+        // Color code page type
+        const typeColor = ['FAQ', 'Documentation', 'Guide', 'Support', 'Help'].includes(page.pageType) 
+                        ? '#667eea' : '#999';
+        
+        row.innerHTML = `
+            <td><a href="${page.url}" target="_blank" style="color: #667eea;">${page.url.substring(0, 50)}...</a></td>
+            <td>${(page.title || 'Untitled').substring(0, 40)}${page.title && page.title.length > 40 ? '...' : ''}</td>
+            <td><span style="padding: 4px 8px; background: ${typeColor}20; color: ${typeColor}; border-radius: 4px; font-size: 12px; font-weight: 600;">${page.pageType || 'Other'}</span></td>
+            <td><span style="color: ${qualityColor}; font-weight: bold;">${quality}%</span></td>
+            <td>${(page.qaItems && page.qaItems.length) || 0}</td>
+            <td>${page.wordCount || 0}</td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// Populate basic sitemap table (quick mode)
+function populateBasicSitemapTable(pages) {
+    const tbody = document.getElementById('pagesTableBody');
+    tbody.innerHTML = '';
+    
+    pages.forEach(page => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><a href="${page.url}" target="_blank" style="color: #667eea;">${page.url.substring(0, 50)}...</a></td>
+            <td>${(page.title || 'Untitled').substring(0, 40)}${page.title && page.title.length > 40 ? '...' : ''}</td>
+            <td><span style="padding: 4px 8px; background: #99920; color: #999; border-radius: 4px; font-size: 12px;">Sitemap</span></td>
+            <td><span style="color: #999;">N/A</span></td>
+            <td>0</td>
+            <td>${page.wordCount || 0}</td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// Create network visualization for comprehensive results
+function createComprehensiveNetwork(networkData) {
+    if (!networkData || !networkData.nodes || !networkData.edges) return;
+    
+    const container = document.getElementById('network');
+    const data = {
+        nodes: new vis.DataSet(networkData.nodes),
+        edges: new vis.DataSet(networkData.edges)
+    };
+    
+    const options = {
+        physics: {
+            enabled: true,
+            solver: 'forceAtlas2Based',
+            stabilization: {
+                iterations: 100
+            }
+        },
+        interaction: {
+            hover: true,
+            zoomView: true,
+            dragView: true
+        },
+        edges: {
+            smooth: {
+                type: 'continuous'
+            }
+        }
+    };
+    
+    new vis.Network(container, data, options);
+}
+
+// Export comprehensive map data
+function exportComprehensiveMap() {
+    if (!comprehensiveMapData) {
+        alert('No comprehensive map data available to export');
+        return;
+    }
+    
+    const blob = new Blob([JSON.stringify(comprehensiveMapData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `comprehensive-map-${comprehensiveMapData.domain}-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
 // Initialize on page load
