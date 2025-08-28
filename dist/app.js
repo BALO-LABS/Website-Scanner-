@@ -1,5 +1,142 @@
-// Website Scanner Application with Comprehensive Mapping Support
+// Website Scanner Application with Automatic CORS Proxy Support
 let comprehensiveMapData = null;
+
+// Proxy Manager for automatic CORS proxy fallback
+class ProxyManager {
+    constructor() {
+        this.proxies = [
+            { 
+                name: 'allorigins', 
+                buildUrl: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+                priority: 1
+            },
+            { 
+                name: 'corsproxy.io', 
+                buildUrl: (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+                priority: 2
+            },
+            { 
+                name: 'thingproxy', 
+                buildUrl: (url) => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(url)}`,
+                priority: 3
+            },
+            { 
+                name: 'proxy.cors.sh', 
+                buildUrl: (url) => `https://proxy.cors.sh/${encodeURIComponent(url)}`,
+                priority: 4
+            },
+            { 
+                name: 'cors-anywhere', 
+                buildUrl: (url) => `https://cors-anywhere.herokuapp.com/${url}`,
+                priority: 5
+            }
+        ];
+        this.workingProxies = new Map(); // Cache working proxies per domain
+        this.currentProxyIndex = 0;
+    }
+    
+    async fetchWithFallback(targetUrl, timeout = 8000) {
+        const domain = new URL(targetUrl).hostname;
+        
+        // Update status to show we're trying proxies
+        this.updateProxyStatus('Connecting to proxy...', 'trying');
+        
+        // Try cached working proxy first
+        if (this.workingProxies.has(domain)) {
+            const cachedProxy = this.workingProxies.get(domain);
+            try {
+                const proxyUrl = cachedProxy.buildUrl(targetUrl);
+                const response = await this.fetchWithTimeout(proxyUrl, timeout);
+                if (response.ok) {
+                    const html = await response.text();
+                    if (this.isValidHTML(html)) {
+                        console.log(`✓ Cache hit: ${cachedProxy.name} for ${domain}`);
+                        this.updateProxyStatus(`Using ${cachedProxy.name}`, 'success');
+                        return html;
+                    }
+                }
+            } catch {}
+        }
+        
+        // Try all proxies in order
+        for (let i = 0; i < this.proxies.length; i++) {
+            const proxy = this.proxies[i];
+            try {
+                console.log(`Trying ${proxy.name}...`);
+                this.updateProxyStatus(`Trying ${proxy.name} (${i + 1}/${this.proxies.length})`, 'trying');
+                
+                const proxyUrl = proxy.buildUrl(targetUrl);
+                const response = await this.fetchWithTimeout(proxyUrl, timeout);
+                
+                if (response.ok) {
+                    const html = await response.text();
+                    // Validate HTML content
+                    if (this.isValidHTML(html)) {
+                        console.log(`✓ Success with ${proxy.name}`);
+                        this.workingProxies.set(domain, proxy);
+                        this.updateProxyStatus(`Connected via ${proxy.name}`, 'success');
+                        return html;
+                    }
+                }
+            } catch (error) {
+                console.log(`✗ Failed ${proxy.name}: ${error.message}`);
+            }
+        }
+        
+        // Last resort: try direct fetch (might work for same-origin)
+        try {
+            this.updateProxyStatus('Trying direct connection...', 'trying');
+            const response = await this.fetchWithTimeout(targetUrl, timeout);
+            if (response.ok) {
+                const html = await response.text();
+                if (this.isValidHTML(html)) {
+                    console.log('✓ Direct fetch worked');
+                    this.updateProxyStatus('Direct connection successful', 'success');
+                    return html;
+                }
+            }
+        } catch {}
+        
+        this.updateProxyStatus('All proxies failed', 'error');
+        throw new Error('All proxy methods failed');
+    }
+    
+    isValidHTML(html) {
+        return html && html.length > 100 && 
+               (html.includes('<html') || html.includes('<!DOCTYPE') || html.includes('<HTML') || html.includes('<body'));
+    }
+    
+    async fetchWithTimeout(url, timeout) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        
+        try {
+            const response = await fetch(url, {
+                signal: controller.signal,
+                headers: {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            });
+            return response;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+    
+    updateProxyStatus(message, status) {
+        const currentUrlEl = document.getElementById('currentUrl');
+        if (currentUrlEl) {
+            currentUrlEl.textContent = message;
+            currentUrlEl.className = `proxy-status ${status}`;
+        }
+    }
+}
+
+// Global proxy manager instance
+const proxyManager = new ProxyManager();
 
 class WebsiteScanner {
     constructor() {
@@ -91,9 +228,12 @@ class WebsiteScanner {
     getProxyUrl(url) {
         switch(this.proxyType) {
             case 'allorigins':
-                return `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+                // Primary proxy with fallback
+                return `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
             case 'corsproxy':
                 return `https://corsproxy.io/?${encodeURIComponent(url)}`;
+            case 'cors-anywhere':
+                return `https://cors-anywhere.herokuapp.com/${url}`;
             default:
                 return url;
         }
@@ -101,27 +241,8 @@ class WebsiteScanner {
     
     async fetchPage(url) {
         try {
-            const proxyUrl = this.getProxyUrl(url);
-            const response = await fetch(proxyUrl, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'text/html,application/xhtml+xml'
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            
-            let html;
-            if (this.proxyType === 'allorigins') {
-                const data = await response.json();
-                html = data.contents;
-            } else {
-                html = await response.text();
-            }
-            
-            return html;
+            // Use the global proxy manager with automatic fallback
+            return await proxyManager.fetchWithFallback(url);
         } catch (error) {
             console.error(`Failed to fetch ${url}:`, error);
             return null;
@@ -149,19 +270,76 @@ class WebsiteScanner {
         // Extract heading hierarchy for context
         const headingStructure = this.extractHeadingStructure(doc);
         
-        // Extract links
-        const links = [];
-        const linkElements = doc.querySelectorAll('a[href]');
-        linkElements.forEach(link => {
-            const href = link.getAttribute('href');
-            if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
-                try {
-                    const absoluteUrl = new URL(href, currentUrl).href;
-                    const normalized = this.normalizeUrl(absoluteUrl);
-                    if (normalized) {
-                        links.push(normalized);
+        // Enhanced link extraction
+        const links = new Set();
+        const baseUrl = new URL(currentUrl);
+        
+        // Multiple selectors for comprehensive link discovery
+        const linkSelectors = [
+            'a[href]',
+            'link[rel="canonical"]',
+            'link[rel="alternate"]',
+            'area[href]',
+            '[data-href]',
+            '[data-url]',
+            '[data-link]'
+        ];
+        
+        linkSelectors.forEach(selector => {
+            doc.querySelectorAll(selector).forEach(elem => {
+                const href = elem.getAttribute('href') || 
+                           elem.getAttribute('data-href') || 
+                           elem.getAttribute('data-url') ||
+                           elem.getAttribute('data-link');
+                           
+                if (href && !href.startsWith('#') && !href.startsWith('javascript:') && !href.startsWith('mailto:') && !href.startsWith('tel:')) {
+                    try {
+                        // Handle various URL formats
+                        let absoluteUrl;
+                        if (href.startsWith('http://') || href.startsWith('https://')) {
+                            absoluteUrl = href;
+                        } else if (href.startsWith('//')) {
+                            absoluteUrl = baseUrl.protocol + href;
+                        } else if (href.startsWith('/')) {
+                            absoluteUrl = baseUrl.origin + href;
+                        } else {
+                            // Relative URL
+                            const currentPath = currentUrl.endsWith('/') ? currentUrl : currentUrl.substring(0, currentUrl.lastIndexOf('/') + 1);
+                            absoluteUrl = currentPath + href;
+                        }
+                        
+                        const normalized = this.normalizeUrl(absoluteUrl);
+                        if (normalized && this.isInternalLink(normalized)) {
+                            links.add(normalized);
+                        }
+                    } catch {}
+                }
+            });
+        });
+        
+        // Also try to find links in onclick attributes and JavaScript
+        doc.querySelectorAll('[onclick]').forEach(elem => {
+            const onclick = elem.getAttribute('onclick');
+            if (onclick) {
+                // Look for common patterns like window.location or location.href
+                const patterns = [
+                    /(?:window\.location|location\.href)\s*=\s*['"]([^'"]+)['"]/,
+                    /(?:window\.open|open)\s*\(['"]([^'"]+)['"]/,
+                    /href\s*=\s*['"]([^'"]+)['"]/
+                ];
+                
+                for (const pattern of patterns) {
+                    const match = onclick.match(pattern);
+                    if (match && match[1]) {
+                        try {
+                            const absoluteUrl = new URL(match[1], currentUrl).href;
+                            const normalized = this.normalizeUrl(absoluteUrl);
+                            if (normalized && this.isInternalLink(normalized)) {
+                                links.add(normalized);
+                            }
+                        } catch {}
                     }
-                } catch {}
+                }
             }
         });
         
@@ -187,7 +365,7 @@ class WebsiteScanner {
             metaKeywords,
             content: fullContent,
             wordCount,
-            links,
+            links: Array.from(links),
             images: imageData.count,
             imageData,
             headings: headingStructure,
@@ -506,7 +684,7 @@ class WebsiteScanner {
         this.maxPages = parseInt(document.getElementById('maxPages').value);
         this.maxDepth = parseInt(document.getElementById('maxDepth').value);
         this.delay = parseInt(document.getElementById('delay').value);
-        this.proxyType = document.getElementById('proxy').value;
+        // Proxy selection removed - handled automatically by ProxyManager
         
         // Initialize UI
         document.getElementById('progressSection').style.display = 'block';
@@ -612,11 +790,28 @@ class WebsiteScanner {
         const avgWords = Math.round(totalWords / this.siteMap.size) || 0;
         avgQualityScore = Math.round(avgQualityScore / this.siteMap.size) || 0;
         
-        // Update statistics cards
-        document.getElementById('totalPages').textContent = this.siteMap.size;
-        document.getElementById('totalQA').textContent = totalQA;
-        document.getElementById('docsPages').textContent = docsPages + faqPages;
-        document.getElementById('avgQuality').textContent = avgQualityScore + '%';
+        // Update statistics cards (with null checks)
+        const totalPagesEl = document.getElementById('totalPages');
+        if (totalPagesEl) totalPagesEl.textContent = this.siteMap.size;
+        
+        const totalQAEl = document.getElementById('totalQA');
+        if (totalQAEl) totalQAEl.textContent = totalQA;
+        
+        const docsPagesEl = document.getElementById('docsPages');
+        if (docsPagesEl) docsPagesEl.textContent = docsPages + faqPages;
+        
+        const avgQualityEl = document.getElementById('avgQuality');
+        if (avgQualityEl) avgQualityEl.textContent = avgQualityScore + '%';
+        
+        // Also update alternative elements that exist in HTML
+        const totalLinksEl = document.getElementById('totalLinks');
+        if (totalLinksEl) totalLinksEl.textContent = this.totalLinks;
+        
+        const maxDepthEl = document.getElementById('maxDepthResult');
+        if (maxDepthEl) maxDepthEl.textContent = this.maxDepth;
+        
+        const topPageRankEl = document.getElementById('topPageRank');
+        if (topPageRankEl) topPageRankEl.textContent = '1.000';
         
         // Create network visualization
         this.createNetworkVisualization();
@@ -1170,18 +1365,36 @@ async function startScan() {
         return;
     }
     
+    // Normalize and validate URL
+    let normalizedUrl;
+    try {
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            normalizedUrl = 'https://' + url;
+        } else {
+            normalizedUrl = url;
+        }
+        new URL(normalizedUrl); // Validate URL format
+    } catch {
+        alert('Please enter a valid URL');
+        return;
+    }
+    
+    // Update the URL input with normalized URL
+    document.getElementById('urlInput').value = normalizedUrl;
+    
     // Show progress section
     document.getElementById('progressSection').style.display = 'block';
     document.getElementById('resultsSection').style.display = 'none';
     document.getElementById('scanButton').disabled = true;
     document.getElementById('stopButton').style.display = 'inline-block';
     
-    // Update progress
-    updateProgress(0, 'Initializing comprehensive analysis...');
+    // Create scanner instance and start crawling
+    scanner = new WebsiteScanner();
+    window.currentScanner = scanner; // Store globally for stop functionality
     
     try {
-        // Always run comprehensive analysis (all 42+ methods)
-        await runComprehensiveAnalysis(url);
+        // Use the WebsiteScanner crawl method directly
+        await scanner.crawl();
     } catch (error) {
         console.error('Scan failed:', error);
         alert('Scan failed: ' + error.message);
@@ -1296,6 +1509,10 @@ function finishScanning() {
 }
 
 function stopScan() {
+    if (window.currentScanner) {
+        window.currentScanner.scanning = false;
+        window.currentScanner.finishScanning();
+    }
     scanner.scanning = false;
     scanner.finishScanning();
 }
@@ -1394,13 +1611,20 @@ function exportVectorDB() {
 function displayComprehensiveResults(mapData) {
     if (!mapData) return;
     
-    // Update main statistics
-    document.getElementById('totalPages').textContent = mapData.pages.length;
-    document.getElementById('totalQA').textContent = mapData.pages.reduce((sum, p) => sum + (p.qaItems?.length || 0), 0);
-    document.getElementById('docsPages').textContent = mapData.pages.filter(p => 
+    // Update main statistics (with null checks)
+    const totalPagesEl = document.getElementById('totalPages');
+    if (totalPagesEl) totalPagesEl.textContent = mapData.pages.length;
+    
+    const totalQAEl = document.getElementById('totalQA');
+    if (totalQAEl) totalQAEl.textContent = mapData.pages.reduce((sum, p) => sum + (p.qaItems?.length || 0), 0);
+    
+    const docsPagesEl = document.getElementById('docsPages');
+    if (docsPagesEl) docsPagesEl.textContent = mapData.pages.filter(p => 
         ['FAQ', 'Documentation', 'Guide', 'Support', 'Help'].includes(p.pageType)
     ).length;
-    document.getElementById('avgQuality').textContent = mapData.contentAnalysis.averageQualityScore.toFixed(1) + '%';
+    
+    const avgQualityEl = document.getElementById('avgQuality');
+    if (avgQualityEl) avgQualityEl.textContent = mapData.contentAnalysis.averageQualityScore.toFixed(1) + '%';
     
     // Display discovery methods
     const discoveryContainer = document.getElementById('discoveryMethods');
@@ -1492,11 +1716,18 @@ function displayComprehensiveResults(mapData) {
 function displaySitemapResults(sitemapData) {
     if (!sitemapData) return;
     
-    // Update statistics
-    document.getElementById('totalPages').textContent = sitemapData.pages?.length || 0;
-    document.getElementById('totalQA').textContent = 0; // Quick mode doesn't extract content
-    document.getElementById('docsPages').textContent = 0;
-    document.getElementById('avgQuality').textContent = 'N/A';
+    // Update statistics (with null checks)
+    const totalPagesEl = document.getElementById('totalPages');
+    if (totalPagesEl) totalPagesEl.textContent = sitemapData.pages?.length || 0;
+    
+    const totalQAEl = document.getElementById('totalQA');
+    if (totalQAEl) totalQAEl.textContent = 0; // Quick mode doesn't extract content
+    
+    const docsPagesEl = document.getElementById('docsPages');
+    if (docsPagesEl) docsPagesEl.textContent = 0;
+    
+    const avgQualityEl = document.getElementById('avgQuality');
+    if (avgQualityEl) avgQualityEl.textContent = 'N/A';
     
     // Hide advanced analysis sections
     const advancedSections = document.querySelectorAll('.advanced-only');
