@@ -198,16 +198,21 @@ class WebsiteScanner {
             return false;
         }
         
-        // Skip user-specific and transactional pages
+        // Skip user-specific and transactional pages - be more specific to avoid false positives
         const skipPatterns = [
             '/login', '/logout', '/signin', '/signup', '/register',
-            '/cart', '/checkout', '/payment', '/account', '/profile',
-            '/admin', '/dashboard', '/settings', '/preferences',
-            '/search?', '/filter?', '?sort=', '?page=',
-            '/download/', '/print/'
+            '/cart', '/checkout', '/payment', 
+            '/user/account', '/user/profile', '/my-account', '/myprofile',
+            '/wp-admin', '/admin/', '/administrator/',
+            '?search=', '?filter=', '?sort=', '?page=',
+            '/download.php', '/print.php'
         ];
         
-        if (skipPatterns.some(pattern => urlLower.includes(pattern))) {
+        // Check for exact pattern matches or at end of URL to avoid false positives
+        if (skipPatterns.some(pattern => {
+            return urlLower.includes(pattern) && 
+                   (urlLower.endsWith(pattern) || urlLower.includes(pattern + '/') || urlLower.includes(pattern + '?'));
+        })) {
             return false;
         }
         
@@ -724,15 +729,27 @@ class WebsiteScanner {
                 pageData.parent = parent;
                 this.siteMap.set(url, pageData);
                 
+                // Log scanning details for debugging
+                console.log(`[${this.pagesScanned}/${this.maxPages}] Scanned: ${url}`);
+                console.log(`  Found ${pageData.links.length} links, Depth: ${depth}, Type: ${pageData.pageType}`);
+                
                 // Add links to queue
+                let addedToQueue = 0;
+                let skippedLinks = 0;
                 for (const link of pageData.links) {
                     if (this.shouldCrawl(link)) {
                         this.queue.push({ url: link, depth: depth + 1, parent: url });
+                        addedToQueue++;
                         
                         // Track edge for network graph
                         this.edges.push({ from: url, to: link });
+                    } else {
+                        skippedLinks++;
                     }
                 }
+                console.log(`  Added ${addedToQueue} to queue, Skipped ${skippedLinks}, Queue size: ${this.queue.length}`);
+            } else {
+                console.log(`[${this.pagesScanned}/${this.maxPages}] Failed to fetch: ${url}`);
             }
             
             // Delay between requests
