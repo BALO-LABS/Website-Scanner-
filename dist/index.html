@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Website Scanner - Live Analysis Tool</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/dist/vis-network.min.js"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/dist/vis-network.min.css" rel="stylesheet">
+    <title>RAG Collector API - Interactive Testing Interface</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -13,144 +12,464 @@
             box-sizing: border-box;
         }
         
+        :root {
+            --primary: #667eea;
+            --secondary: #764ba2;
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --dark: #1f2937;
+            --light: #f9fafb;
+        }
+        
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
             min-height: 100vh;
-            padding: 20px;
+            color: var(--dark);
         }
         
         .container {
             max-width: 1400px;
             margin: 0 auto;
+            padding: 20px;
         }
         
         .header {
             background: white;
-            border-radius: 15px;
-            padding: 30px;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            text-align: center;
         }
         
         .header h1 {
-            color: #333;
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 15px;
+        }
+        
+        .header p {
+            color: #6b7280;
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+        }
+        
+        .api-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: var(--light);
+            border-radius: 50px;
+            font-size: 0.9rem;
+        }
+        
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--error);
+            animation: pulse 2s infinite;
+        }
+        
+        .status-indicator.online {
+            background: var(--success);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .sidebar {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            height: fit-content;
+            position: sticky;
+            top: 20px;
+        }
+        
+        .sidebar h2 {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            color: var(--dark);
+        }
+        
+        .endpoint-list {
+            list-style: none;
+        }
+        
+        .endpoint-item {
             margin-bottom: 10px;
+        }
+        
+        .endpoint-btn {
+            width: 100%;
+            text-align: left;
+            padding: 12px 15px;
+            border: none;
+            background: var(--light);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.9rem;
             display: flex;
             align-items: center;
             gap: 10px;
         }
         
-        .header p {
-            color: #666;
+        .endpoint-btn:hover {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            transform: translateX(5px);
         }
         
-        .input-section {
+        .endpoint-btn.active {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+        }
+        
+        .method-badge {
+            padding: 2px 8px;
+            border-radius: 5px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            background: white;
+            color: var(--dark);
+        }
+        
+        .method-badge.get {
+            background: #86efac;
+            color: #166534;
+        }
+        
+        .method-badge.post {
+            background: #fbbf24;
+            color: #713f12;
+        }
+        
+        .endpoint-content {
             background: white;
             border-radius: 15px;
             padding: 30px;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
         }
         
-        .input-group {
+        .endpoint-section {
+            display: none;
+        }
+        
+        .endpoint-section.active {
+            display: block;
+        }
+        
+        .endpoint-header {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid var(--light);
+        }
+        
+        .endpoint-title {
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+            color: var(--dark);
+        }
+        
+        .endpoint-path {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 15px;
+            background: var(--light);
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95rem;
+            margin-bottom: 15px;
+        }
+        
+        .endpoint-description {
+            color: #6b7280;
+            line-height: 1.6;
+        }
+        
+        .config-section {
+            margin-bottom: 30px;
+        }
+        
+        .config-section h3 {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            color: var(--dark);
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #4b5563;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .form-control.textarea {
+            min-height: 120px;
+            resize: vertical;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .url-suggestions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .suggestion-chip {
+            padding: 6px 12px;
+            background: var(--light);
+            border: 1px solid #e5e7eb;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .suggestion-chip:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .option-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .option-item input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-secondary {
+            background: var(--light);
+            color: var(--dark);
+        }
+        
+        .btn-secondary:hover {
+            background: #e5e7eb;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .response-section {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid var(--light);
+        }
+        
+        .response-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .response-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 15px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+        
+        .response-status.success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .response-status.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        
+        .response-time {
+            color: #6b7280;
+            font-size: 0.9rem;
+        }
+        
+        .response-body {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 10px;
+            overflow-x: auto;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .response-body pre {
+            margin: 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--light);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .tabs {
             display: flex;
             gap: 10px;
             margin-bottom: 20px;
+            border-bottom: 2px solid var(--light);
         }
         
-        .input-group input {
-            flex: 1;
-            padding: 12px 20px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            font-size: 16px;
-            transition: border-color 0.3s;
+        .tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            color: #6b7280;
+            position: relative;
+            transition: all 0.3s;
         }
         
-        .input-group input:focus {
-            outline: none;
-            border-color: #667eea;
+        .tab:hover {
+            color: var(--primary);
         }
         
-        .controls {
+        .tab.active {
+            color: var(--primary);
+        }
+        
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--primary);
+        }
+        
+        .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             gap: 15px;
             margin-bottom: 20px;
         }
         
-        .control-item {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-        
-        .control-item label {
-            color: #555;
-            font-size: 14px;
-            font-weight: 600;
-        }
-        
-        .control-item input,
-        .control-item select {
-            padding: 8px 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-        
-        .button {
-            padding: 12px 30px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
+        .stat-card {
+            background: var(--light);
+            padding: 15px;
             border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            text-align: center;
         }
         
-        .button:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--primary);
         }
         
-        .button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        
-        .button.secondary {
-            background: #f0f0f0;
-            color: #333;
-            margin-left: 10px;
-        }
-        
-        .progress-section {
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-            display: none;
+        .stat-label {
+            font-size: 0.85rem;
+            color: #6b7280;
+            margin-top: 5px;
         }
         
         .progress-bar {
             width: 100%;
             height: 30px;
-            background: #f0f0f0;
+            background: var(--light);
             border-radius: 15px;
             overflow: hidden;
-            margin-bottom: 10px;
+            margin-bottom: 20px;
         }
         
         .progress-fill {
             height: 100%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 15px;
-            transition: width 0.3s ease;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            transition: width 0.3s;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -158,437 +477,555 @@
             font-weight: 600;
         }
         
-        .status-text {
-            color: #666;
-            margin-top: 10px;
-        }
-        
-        .results-section {
-            display: none;
-            gap: 20px;
-        }
-        
-        .results-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        
-        .result-card {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-        }
-        
-        .result-card h3 {
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 18px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .stat-value {
-            font-size: 32px;
-            font-weight: bold;
-            color: #667eea;
-            margin-bottom: 5px;
-        }
-        
-        .stat-label {
-            color: #666;
-            font-size: 14px;
-        }
-        
-        .network-container {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-            height: 500px;
-            margin-bottom: 20px;
-        }
-        
-        #network {
-            width: 100%;
-            height: 100%;
-            border: 1px solid #e0e0e0;
-            border-radius: 10px;
-        }
-        
-        .pages-table {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-            overflow-x: auto;
-        }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #e0e0e0;
-        }
-        
-        th {
-            background: #f8f9fa;
-            font-weight: 600;
-            color: #333;
-        }
-        
-        tr:hover {
-            background: #f8f9fa;
-        }
-        
-        .error-message {
-            background: #fee;
-            border-left: 4px solid #f44;
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 8px;
-            color: #844;
-        }
-        
-        .info-message {
-            background: #e3f2fd;
-            border-left: 4px solid #2196f3;
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 8px;
-            color: #1565c0;
-        }
-        
-        .export-buttons {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-        }
-        
-        .sitemap-container {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
-            display: block;
-        }
-        
-        .sitemap-container h3 {
-            color: #333;
-            margin-bottom: 15px;
-        }
-        
-        .sitemap-controls {
-            margin-bottom: 20px;
-            display: flex;
-            gap: 10px;
-        }
-        
-        .sitemap-controls .button {
-            padding: 8px 16px;
-            font-size: 14px;
-        }
-        
-        #sitemapTree {
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            line-height: 1.6;
-            max-height: 600px;
-            overflow-y: auto;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 8px;
-            min-height: 100px;
-            display: block;
-        }
-        
-        .tree-node {
-            margin-left: 0;
-        }
-        
-        .tree-node.child {
-            margin-left: 20px;
-        }
-        
-        .tree-item {
-            display: flex;
-            align-items: flex-start;
-            margin: 5px 0;
-            cursor: pointer;
-            user-select: none;
-        }
-        
-        .tree-toggle {
-            width: 20px;
-            flex-shrink: 0;
-            text-align: center;
-            color: #667eea;
-            font-weight: bold;
-        }
-        
-        .tree-content {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 5px 10px;
-            border-radius: 5px;
-            transition: background 0.2s;
-        }
-        
-        .tree-content:hover {
-            background: white;
-        }
-        
-        .tree-url {
-            color: #333;
-            text-decoration: none;
-            word-break: break-all;
-        }
-        
-        .tree-url:hover {
-            color: #667eea;
-        }
-        
-        .tree-info {
-            display: flex;
-            gap: 15px;
-            font-size: 12px;
-            color: #666;
-        }
-        
-        .tree-badge {
-            padding: 2px 6px;
-            background: #e0e0e0;
-            border-radius: 3px;
-            font-size: 11px;
-        }
-        
-        .tree-badge.depth {
-            background: #e3f2fd;
-            color: #1565c0;
-        }
-        
-        .tree-badge.links {
-            background: #f3e5f5;
-            color: #7b1fa2;
-        }
-        
-        .tree-badge.type {
-            background: #e8f5e9;
-            color: #388e3c;
-        }
-        
-        .tree-children {
-            display: none;
-        }
-        
-        .tree-children.expanded {
-            display: block;
-        }
-        
         @media (max-width: 768px) {
-            .controls {
+            .main-content {
                 grid-template-columns: 1fr;
             }
             
-            .results-grid {
-                grid-template-columns: 1fr;
+            .sidebar {
+                position: static;
             }
             
-            .input-group {
-                flex-direction: column;
+            .header h1 {
+                font-size: 1.8rem;
             }
+        }
+        
+        .help-text {
+            font-size: 0.85rem;
+            color: #6b7280;
+            margin-top: 5px;
+        }
+        
+        .example-box {
+            background: var(--light);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+        
+        .footer {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            color: #6b7280;
+            margin-top: 30px;
+        }
+        
+        .footer a {
+            color: var(--primary);
+            text-decoration: none;
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- Header -->
         <div class="header">
-            <h1>
-                <span style="font-size: 32px;">🤖</span>
-                RAG Data Collector
-            </h1>
-            <p>Extract and structure website content for AI customer service agents</p>
+            <h1>🚀 RAG Collector API</h1>
+            <p>Interactive Testing Interface for Website Content Collection</p>
+            <div class="api-status">
+                <span class="status-indicator" id="statusIndicator"></span>
+                <span id="statusText">Checking API status...</span>
+            </div>
         </div>
-        
-        <div class="input-section">
-            <div class="input-group">
-                <input type="url" id="urlInput" placeholder="Enter website URL (e.g., https://example.com)" value="">
-            </div>
-            
-            <div class="controls">
-                <div class="info-note" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px; border-radius: 8px; margin-bottom: 10px; text-align: center;">
-                    <strong>🔬 Comprehensive Website Analysis</strong><br>
-                    <small>Automatically runs all 42+ mapping methods and combines results</small>
-                </div>
-                <div class="control-item">
-                    <label for="maxPages">Max Pages</label>
-                    <input type="number" id="maxPages" value="50" min="1" max="500">
-                </div>
-                <div class="control-item">
-                    <label for="maxDepth">Max Depth</label>
-                    <input type="number" id="maxDepth" value="3" min="1" max="10">
-                </div>
-                <div class="control-item">
-                    <label for="delay">Delay (ms)</label>
-                    <input type="number" id="delay" value="500" min="100" max="5000" step="100">
-                </div>
-                <div class="control-item">
-                    <label for="proxy">CORS Proxy</label>
-                    <select id="proxy">
-                        <option value="allorigins">AllOrigins (Recommended)</option>
-                        <option value="corsproxy">CorsProxy.io</option>
-                        <option value="none">None (Same-Origin Only)</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div class="info-message">
-                🤖 This tool extracts FAQ, documentation, and support content to train AI customer service agents. Higher quality scores indicate better content for RAG systems.
-            </div>
-            
-            <button class="button" id="scanButton" onclick="startScan()">
-                Start Scanning
-            </button>
-            <button class="button secondary" id="stopButton" onclick="stopScan()" style="display: none;">
-                Stop Scanning
-            </button>
-        </div>
-        
-        <div class="progress-section" id="progressSection">
-            <h3>Scanning Progress</h3>
-            <div class="progress-bar">
-                <div class="progress-fill" id="progressFill">0%</div>
-            </div>
-            <div class="status-text" id="statusText">Initializing...</div>
-            <div id="currentUrl" style="margin-top: 10px; color: #999; font-size: 14px;"></div>
-        </div>
-        
-        <div class="results-section" id="resultsSection">
-            <div class="results-grid">
-                <div class="result-card">
-                    <h3>📊 Total Pages</h3>
-                    <div class="stat-value" id="totalPages">0</div>
-                    <div class="stat-label">Pages Scanned</div>
-                </div>
-                <div class="result-card">
-                    <h3>🔗 Total Links</h3>
-                    <div class="stat-value" id="totalLinks">0</div>
-                    <div class="stat-label">Links Discovered</div>
-                </div>
-                <div class="result-card">
-                    <h3>⭐ Avg Quality</h3>
-                    <div class="stat-value" id="avgQuality">0%</div>
-                    <div class="stat-label">Content Quality Score</div>
-                </div>
-                <div class="result-card">
-                    <h3>📏 Max Depth</h3>
-                    <div class="stat-value" id="maxDepthResult">0</div>
-                    <div class="stat-label">Crawl Depth Reached</div>
-                </div>
-                <div class="result-card">
-                    <h3>🏆 Top PageRank</h3>
-                    <div class="stat-value" id="topPageRank">0.000</div>
-                    <div class="stat-label">Highest Authority Score</div>
-                </div>
-                <div class="result-card">
-                    <h3>📝 Total Words</h3>
-                    <div class="stat-value" id="totalWords">0</div>
-                    <div class="stat-label">Content Words</div>
-                </div>
-                <div class="result-card">
-                    <h3>🖼️ Images</h3>
-                    <div class="stat-value" id="totalImages">0</div>
-                    <div class="stat-label">Images Found</div>
-                </div>
-                <div class="result-card">
-                    <h3>🔧 Technologies</h3>
-                    <div class="stat-value" id="techCount">0</div>
-                    <div class="stat-label">Detected</div>
-                </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Sidebar Navigation -->
+            <div class="sidebar">
+                <h2>📋 API Endpoints</h2>
+                <ul class="endpoint-list">
+                    <li class="endpoint-item">
+                        <button class="endpoint-btn active" data-endpoint="health">
+                            <span class="method-badge get">GET</span>
+                            Health Check
+                        </button>
+                    </li>
+                    <li class="endpoint-item">
+                        <button class="endpoint-btn" data-endpoint="scan">
+                            <span class="method-badge post">POST</span>
+                            Start Scan
+                        </button>
+                    </li>
+                    <li class="endpoint-item">
+                        <button class="endpoint-btn" data-endpoint="status">
+                            <span class="method-badge get">GET</span>
+                            Scan Status
+                        </button>
+                    </li>
+                    <li class="endpoint-item">
+                        <button class="endpoint-btn" data-endpoint="results">
+                            <span class="method-badge get">GET</span>
+                            Scan Results
+                        </button>
+                    </li>
+                    <li class="endpoint-item">
+                        <button class="endpoint-btn" data-endpoint="extract">
+                            <span class="method-badge post">POST</span>
+                            Extract Page
+                        </button>
+                    </li>
+                    <li class="endpoint-item">
+                        <button class="endpoint-btn" data-endpoint="export">
+                            <span class="method-badge post">POST</span>
+                            Export Data
+                        </button>
+                    </li>
+                    <li class="endpoint-item">
+                        <button class="endpoint-btn" data-endpoint="batch">
+                            <span class="method-badge post">POST</span>
+                            Batch Scan
+                        </button>
+                    </li>
+                </ul>
             </div>
 
-            <!-- Advanced Analysis Results (only shown for comprehensive mode) -->
-            <div id="advancedResults" style="display: none;">
-                <div class="result-card" style="grid-column: 1 / -1; margin: 20px 0;">
-                    <h3>🔬 Advanced Analysis Results</h3>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 15px;">
-                        <div>
-                            <h4>🤖 Discovery Methods</h4>
-                            <div id="discoveryMethods"></div>
+            <!-- Endpoint Content Area -->
+            <div class="endpoint-content">
+                <!-- Health Check Endpoint -->
+                <div class="endpoint-section active" id="health-section">
+                    <div class="endpoint-header">
+                        <h2 class="endpoint-title">Health Check</h2>
+                        <div class="endpoint-path">
+                            <span class="method-badge get">GET</span>
+                            /api/health
                         </div>
-                        <div>
-                            <h4>📊 Authority Analysis</h4>
-                            <div id="authorityAnalysis"></div>
+                        <p class="endpoint-description">
+                            Check if the API server is running and healthy. No authentication required.
+                        </p>
+                    </div>
+
+                    <div class="config-section">
+                        <h3>Configuration</h3>
+                        <div class="form-group">
+                            <label>API Server URL</label>
+                            <input type="text" class="form-control" id="health-server" value="http://localhost:3000">
+                            <div class="help-text">The base URL of your API server</div>
                         </div>
-                        <div>
-                            <h4>📝 Content Distribution</h4>
-                            <div id="contentDistribution"></div>
+                        <button class="btn btn-primary" onclick="testHealth()">
+                            <span>🔍</span> Test Endpoint
+                        </button>
+                    </div>
+
+                    <div class="response-section" id="health-response" style="display: none;">
+                        <div class="response-header">
+                            <div class="response-status" id="health-status"></div>
+                            <div class="response-time" id="health-time"></div>
                         </div>
-                        <div>
-                            <h4>🔧 Technology Stack</h4>
-                            <div id="technologyStack"></div>
+                        <div class="response-body">
+                            <pre id="health-body"></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Start Scan Endpoint -->
+                <div class="endpoint-section" id="scan-section">
+                    <div class="endpoint-header">
+                        <h2 class="endpoint-title">Start Website Scan</h2>
+                        <div class="endpoint-path">
+                            <span class="method-badge post">POST</span>
+                            /api/scan
+                        </div>
+                        <p class="endpoint-description">
+                            Initiate a comprehensive website crawl and content extraction. Returns a scan ID for tracking progress.
+                        </p>
+                    </div>
+
+                    <div class="config-section">
+                        <h3>Configuration</h3>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="text" class="form-control" id="scan-apikey" value="test-api-key" placeholder="Enter your API key">
+                            <div class="help-text">Required for authentication</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Website URL</label>
+                            <input type="text" class="form-control" id="scan-url" placeholder="https://example.com">
+                            <div class="url-suggestions">
+                                <span class="suggestion-chip" onclick="setScanUrl('https://balolabs.com')">balolabs.com</span>
+                                <span class="suggestion-chip" onclick="setScanUrl('https://example.com')">example.com</span>
+                                <span class="suggestion-chip" onclick="setScanUrl('https://docs.github.com')">docs.github.com</span>
+                                <span class="suggestion-chip" onclick="setScanUrl('https://nodejs.org')">nodejs.org</span>
+                                <span class="suggestion-chip" onclick="setScanUrl('https://reactjs.org')">reactjs.org</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Scan Options</label>
+                            <div class="options-grid">
+                                <div class="option-item">
+                                    <label>Max Pages:</label>
+                                    <input type="number" class="form-control" id="scan-maxpages" value="20" min="1" max="100">
+                                </div>
+                                <div class="option-item">
+                                    <label>Max Depth:</label>
+                                    <input type="number" class="form-control" id="scan-maxdepth" value="2" min="1" max="5">
+                                </div>
+                                <div class="option-item">
+                                    <label>Delay (ms):</label>
+                                    <input type="number" class="form-control" id="scan-delay" value="500" min="100" max="5000">
+                                </div>
+                                <div class="option-item">
+                                    <label>Min Quality:</label>
+                                    <input type="number" class="form-control" id="scan-quality" value="30" min="0" max="100">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Page Types to Include</label>
+                            <div class="options-grid">
+                                <div class="option-item">
+                                    <input type="checkbox" id="type-faq" checked>
+                                    <label for="type-faq">FAQ</label>
+                                </div>
+                                <div class="option-item">
+                                    <input type="checkbox" id="type-docs" checked>
+                                    <label for="type-docs">Documentation</label>
+                                </div>
+                                <div class="option-item">
+                                    <input type="checkbox" id="type-support" checked>
+                                    <label for="type-support">Support</label>
+                                </div>
+                                <div class="option-item">
+                                    <input type="checkbox" id="type-about" checked>
+                                    <label for="type-about">About</label>
+                                </div>
+                                <div class="option-item">
+                                    <input type="checkbox" id="type-product">
+                                    <label for="type-product">Product</label>
+                                </div>
+                                <div class="option-item">
+                                    <input type="checkbox" id="type-blog">
+                                    <label for="type-blog">Blog</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-primary" onclick="startScan()">
+                            <span>🚀</span> Start Scan
+                        </button>
+                    </div>
+
+                    <div class="response-section" id="scan-response" style="display: none;">
+                        <div class="response-header">
+                            <div class="response-status" id="scan-status"></div>
+                            <div class="response-time" id="scan-time"></div>
+                        </div>
+                        <div class="response-body">
+                            <pre id="scan-body"></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scan Status Endpoint -->
+                <div class="endpoint-section" id="status-section">
+                    <div class="endpoint-header">
+                        <h2 class="endpoint-title">Check Scan Status</h2>
+                        <div class="endpoint-path">
+                            <span class="method-badge get">GET</span>
+                            /api/scan/{scanId}/status
+                        </div>
+                        <p class="endpoint-description">
+                            Monitor the progress of a running scan. Returns current status, progress percentage, and pages scanned.
+                        </p>
+                    </div>
+
+                    <div class="config-section">
+                        <h3>Configuration</h3>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="text" class="form-control" id="status-apikey" value="test-api-key">
+                        </div>
+                        <div class="form-group">
+                            <label>Scan ID</label>
+                            <input type="text" class="form-control" id="status-scanid" placeholder="Enter scan ID from previous scan">
+                            <div class="help-text">Get this from the Start Scan response</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="status-auto" onchange="toggleAutoRefresh()">
+                                Auto-refresh every 2 seconds
+                            </label>
+                        </div>
+
+                        <button class="btn btn-primary" onclick="checkStatus()">
+                            <span>📊</span> Check Status
+                        </button>
+                    </div>
+
+                    <div id="status-progress" style="display: none; margin-top: 20px;">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill" style="width: 0%">0%</div>
+                        </div>
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-value" id="stat-pages">0</div>
+                                <div class="stat-label">Pages Scanned</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="stat-status">-</div>
+                                <div class="stat-label">Status</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="stat-time">0s</div>
+                                <div class="stat-label">Elapsed Time</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="response-section" id="status-response" style="display: none;">
+                        <div class="response-header">
+                            <div class="response-status" id="status-status"></div>
+                            <div class="response-time" id="status-time"></div>
+                        </div>
+                        <div class="response-body">
+                            <pre id="status-body"></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scan Results Endpoint -->
+                <div class="endpoint-section" id="results-section">
+                    <div class="endpoint-header">
+                        <h2 class="endpoint-title">Get Scan Results</h2>
+                        <div class="endpoint-path">
+                            <span class="method-badge get">GET</span>
+                            /api/scan/{scanId}/results
+                        </div>
+                        <p class="endpoint-description">
+                            Retrieve the complete results of a finished scan including all pages, statistics, and site structure.
+                        </p>
+                    </div>
+
+                    <div class="config-section">
+                        <h3>Configuration</h3>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="text" class="form-control" id="results-apikey" value="test-api-key">
+                        </div>
+                        <div class="form-group">
+                            <label>Scan ID</label>
+                            <input type="text" class="form-control" id="results-scanid" placeholder="Enter scan ID">
+                        </div>
+
+                        <button class="btn btn-primary" onclick="getResults()">
+                            <span>📥</span> Get Results
+                        </button>
+                    </div>
+
+                    <div class="response-section" id="results-response" style="display: none;">
+                        <div class="tabs">
+                            <button class="tab active" onclick="showResultsTab('summary')">Summary</button>
+                            <button class="tab" onclick="showResultsTab('pages')">Pages</button>
+                            <button class="tab" onclick="showResultsTab('raw')">Raw JSON</button>
+                        </div>
+                        
+                        <div id="results-summary" class="tab-content">
+                            <div class="stats-grid" id="results-stats"></div>
+                        </div>
+                        
+                        <div id="results-pages" class="tab-content" style="display: none;">
+                            <div id="pages-list"></div>
+                        </div>
+                        
+                        <div id="results-raw" class="tab-content" style="display: none;">
+                            <div class="response-body">
+                                <pre id="results-body"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Extract Page Endpoint -->
+                <div class="endpoint-section" id="extract-section">
+                    <div class="endpoint-header">
+                        <h2 class="endpoint-title">Extract Single Page</h2>
+                        <div class="endpoint-path">
+                            <span class="method-badge post">POST</span>
+                            /api/extract
+                        </div>
+                        <p class="endpoint-description">
+                            Extract content from a single URL without running a full scan. Perfect for testing individual pages.
+                        </p>
+                    </div>
+
+                    <div class="config-section">
+                        <h3>Configuration</h3>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="text" class="form-control" id="extract-apikey" value="test-api-key">
+                        </div>
+                        <div class="form-group">
+                            <label>Page URL</label>
+                            <input type="text" class="form-control" id="extract-url" placeholder="https://example.com/page">
+                            <div class="url-suggestions">
+                                <span class="suggestion-chip" onclick="setExtractUrl('https://balolabs.com/about-us')">balolabs.com/about</span>
+                                <span class="suggestion-chip" onclick="setExtractUrl('https://example.com/faq')">example.com/faq</span>
+                                <span class="suggestion-chip" onclick="setExtractUrl('https://nodejs.org/docs')">nodejs.org/docs</span>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Extractors</label>
+                            <div class="options-grid">
+                                <div class="option-item">
+                                    <input type="checkbox" id="extract-content" checked>
+                                    <label for="extract-content">Content</label>
+                                </div>
+                                <div class="option-item">
+                                    <input type="checkbox" id="extract-metadata" checked>
+                                    <label for="extract-metadata">Metadata</label>
+                                </div>
+                                <div class="option-item">
+                                    <input type="checkbox" id="extract-qa" checked>
+                                    <label for="extract-qa">Q&A Pairs</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-primary" onclick="extractPage()">
+                            <span>📄</span> Extract Content
+                        </button>
+                    </div>
+
+                    <div class="response-section" id="extract-response" style="display: none;">
+                        <div class="response-header">
+                            <div class="response-status" id="extract-status"></div>
+                            <div class="response-time" id="extract-time"></div>
+                        </div>
+                        <div class="response-body">
+                            <pre id="extract-body"></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Export Data Endpoint -->
+                <div class="endpoint-section" id="export-section">
+                    <div class="endpoint-header">
+                        <h2 class="endpoint-title">Export Scan Data</h2>
+                        <div class="endpoint-path">
+                            <span class="method-badge post">POST</span>
+                            /api/export
+                        </div>
+                        <p class="endpoint-description">
+                            Export scan results in various formats for use in RAG systems or further analysis.
+                        </p>
+                    </div>
+
+                    <div class="config-section">
+                        <h3>Configuration</h3>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="text" class="form-control" id="export-apikey" value="test-api-key">
+                        </div>
+                        <div class="form-group">
+                            <label>Scan ID</label>
+                            <input type="text" class="form-control" id="export-scanid" placeholder="Enter scan ID">
+                        </div>
+                        <div class="form-group">
+                            <label>Export Format</label>
+                            <select class="form-control" id="export-format">
+                                <option value="json">JSON</option>
+                                <option value="csv">CSV</option>
+                                <option value="markdown">Markdown</option>
+                                <option value="xml">XML</option>
+                            </select>
+                        </div>
+
+                        <button class="btn btn-primary" onclick="exportData()">
+                            <span>💾</span> Export Data
+                        </button>
+                    </div>
+
+                    <div class="response-section" id="export-response" style="display: none;">
+                        <div class="response-header">
+                            <div class="response-status" id="export-status"></div>
+                            <div class="response-time" id="export-time"></div>
+                        </div>
+                        <div class="response-body">
+                            <pre id="export-body"></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Batch Scan Endpoint -->
+                <div class="endpoint-section" id="batch-section">
+                    <div class="endpoint-header">
+                        <h2 class="endpoint-title">Batch Scan</h2>
+                        <div class="endpoint-path">
+                            <span class="method-badge post">POST</span>
+                            /api/batch
+                        </div>
+                        <p class="endpoint-description">
+                            Scan multiple websites simultaneously. Maximum 10 URLs per batch.
+                        </p>
+                    </div>
+
+                    <div class="config-section">
+                        <h3>Configuration</h3>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="text" class="form-control" id="batch-apikey" value="test-api-key">
+                        </div>
+                        <div class="form-group">
+                            <label>URLs (one per line)</label>
+                            <textarea class="form-control textarea" id="batch-urls" placeholder="https://example1.com
+https://example2.com
+https://example3.com"></textarea>
+                            <div class="help-text">Enter up to 10 URLs, one per line</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Batch Options</label>
+                            <div class="options-grid">
+                                <div class="option-item">
+                                    <label>Max Pages:</label>
+                                    <input type="number" class="form-control" id="batch-maxpages" value="10" min="1" max="50">
+                                </div>
+                                <div class="option-item">
+                                    <label>Max Depth:</label>
+                                    <input type="number" class="form-control" id="batch-maxdepth" value="2" min="1" max="3">
+                                </div>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-primary" onclick="batchScan()">
+                            <span>🚀</span> Start Batch Scan
+                        </button>
+                    </div>
+
+                    <div class="response-section" id="batch-response" style="display: none;">
+                        <div class="response-header">
+                            <div class="response-status" id="batch-status"></div>
+                            <div class="response-time" id="batch-time"></div>
+                        </div>
+                        <div class="response-body">
+                            <pre id="batch-body"></pre>
                         </div>
                     </div>
                 </div>
             </div>
-            
-            <div class="network-container">
-                <h3>Site Structure Network</h3>
-                <div id="network"></div>
-            </div>
-            
-            <div class="sitemap-container">
-                <h3>Site Map Hierarchy</h3>
-                <div class="sitemap-controls">
-                    <button class="button secondary" onclick="expandAllSitemap()">Expand All</button>
-                    <button class="button secondary" onclick="collapseAllSitemap()">Collapse All</button>
-                    <button class="button" onclick="exportXMLSitemap()">Export XML Sitemap</button>
-                </div>
-                <div id="sitemapTree"></div>
-            </div>
-            
-            <div class="pages-table">
-                <h3>Scanned Pages</h3>
-                <table id="pagesTable">
-                    <thead>
-                        <tr>
-                            <th>URL</th>
-                            <th>Title</th>
-                            <th>Type</th>
-                            <th>Quality</th>
-                            <th>PageRank</th>
-                            <th>Links In/Out</th>
-                            <th>Words</th>
-                            <th>Depth</th>
-                        </tr>
-                    </thead>
-                    <tbody id="pagesTableBody">
-                    </tbody>
-                </table>
-                
-                <div class="export-buttons">
-                    <button class="button" onclick="exportForRAG()" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">Export for RAG</button>
-                    <button class="button" onclick="exportComprehensiveMap()" style="background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);">📊 Export Comprehensive Map</button>
-                    <button class="button" onclick="exportMarkdown()">Export Markdown</button>
-                    <button class="button" onclick="exportVectorDB()">Export for VectorDB</button>
-                    <button class="button secondary" onclick="exportJSON()">Export JSON</button>
-                    <button class="button secondary" onclick="exportCSV()">Export CSV</button>
-                    <button class="button secondary" onclick="exportXMLSitemap()">XML Sitemap</button>
-                </div>
-            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>
+                Built with ❤️ for RAG Data Collection | 
+                <a href="https://github.com" target="_blank">GitHub</a> | 
+                <a href="#" onclick="showDocs()">Documentation</a>
+            </p>
         </div>
     </div>
-    
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
