@@ -19,12 +19,12 @@
 
 [[redirects]]
   from = "/api/scan"
-  to = "/.netlify/functions/api-scan"
+  to = "/.netlify/functions/api-scan-simple"
   status = 200
 
 [[redirects]]
   from = "/api/extract"
-  to = "/.netlify/functions/api-extract"
+  to = "/.netlify/functions/api-extract-simple"
   status = 200
 
 # SPA fallback
