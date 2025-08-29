@@ -11,6 +11,8 @@ require('dotenv').config();
 
 const WebsiteScanner = require('./scanner');
 const { validateScanRequest, validateExportRequest } = require('./validators');
+const sitemapRoutes = require('./sitemap-routes');
+const comprehensiveMapRoutes = require('./comprehensive-map');
 
 // Initialize Express app
 const app = express();
@@ -27,22 +29,27 @@ const logger = winston.createLogger({
   ]
 });
 
-// Redis client for caching
-const redisClient = Redis.createClient({
-  url: process.env.REDIS_URL || 'redis://localhost:6379'
-});
+// Redis client for caching (disabled for testing)
+let redisClient = null;
+let scanQueue = null;
 
-redisClient.on('error', (err) => {
-  logger.error('Redis Client Error', err);
-});
+if (process.env.ENABLE_REDIS === 'true') {
+  redisClient = Redis.createClient({
+    url: process.env.REDIS_URL || 'redis://localhost:6379'
+  });
 
-// Job queue for async processing
-const scanQueue = new Queue('website-scans', {
-  redis: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: process.env.REDIS_PORT || 6379
-  }
-});
+  redisClient.on('error', (err) => {
+    logger.error('Redis Client Error', err);
+  });
+
+  // Job queue for async processing
+  scanQueue = new Queue('website-scans', {
+    redis: {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: process.env.REDIS_PORT || 6379
+    }
+  });
+}
 
 // Middleware
 app.use(helmet());
@@ -53,11 +60,22 @@ app.use(express.json({ limit: '10mb' }));
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 100, // 100 requests per hour
+  max: 10000, // 10000 requests per hour (increased for testing)
   message: 'Too many requests from this IP, please try again later.'
 });
 
 app.use('/api/', limiter);
+
+// In-memory storage for demo (use database in production)
+const scanResults = new Map();
+
+// Use sitemap routes
+sitemapRoutes.setScanResults(scanResults);
+app.use('/api', sitemapRoutes);
+
+// Use comprehensive map routes
+comprehensiveMapRoutes.setScanResults(scanResults);
+app.use('/api', comprehensiveMapRoutes);
 
 // API Key authentication middleware
 const authenticateAPIKey = (req, res, next) => {
@@ -76,9 +94,6 @@ const authenticateAPIKey = (req, res, next) => {
   }
 };
 
-// In-memory storage for demo (use database in production)
-const scanResults = new Map();
-
 // Routes
 
 // Health check
@@ -93,7 +108,13 @@ app.get('/api/health', (req, res) => {
 // Start a website scan
 app.post('/api/scan', authenticateAPIKey, async (req, res) => {
   try {
-    const { url, options = {} } = req.body;
+    const { url, maxPages, maxDepth, crawlDelay, delay, includeMetadata, extractQA, ...otherOptions } = req.body;
+    const options = {
+      maxPages: maxPages || otherOptions.maxPages,
+      maxDepth: maxDepth || otherOptions.maxDepth,
+      delay: delay || crawlDelay || otherOptions.delay,
+      ...otherOptions
+    };
     
     // Validate input
     if (!url) {
@@ -110,31 +131,56 @@ app.post('/api/scan', authenticateAPIKey, async (req, res) => {
       includeContent: options.includeContent !== false
     };
     
-    // Add job to queue for async processing
-    const job = await scanQueue.add({
-      scanId,
-      url,
-      options: scanOptions
-    });
-    
-    // Store initial scan status
-    scanResults.set(scanId, {
-      scanId,
-      status: 'queued',
-      progress: 0,
-      url,
-      jobId: job.id,
-      createdAt: new Date().toISOString()
-    });
-    
-    logger.info(`Scan initiated: ${scanId} for ${url}`);
-    
-    res.json({
-      scanId,
-      status: 'queued',
-      estimatedTime: Math.ceil((scanOptions.maxPages * scanOptions.delay) / 1000),
-      message: 'Scan queued for processing'
-    });
+    // Add job to queue for async processing (if available)
+    let jobId = null;
+    if (scanQueue) {
+      const job = await scanQueue.add({
+        scanId,
+        url,
+        options: scanOptions
+      });
+      jobId = job.id;
+      
+      // Store initial scan status
+      scanResults.set(scanId, {
+        scanId,
+        status: 'queued',
+        progress: 0,
+        url,
+        jobId: jobId,
+        createdAt: new Date().toISOString()
+      });
+      
+      logger.info(`Scan initiated: ${scanId} for ${url}`);
+      
+      res.json({
+        scanId,
+        status: 'queued',
+        estimatedTime: Math.ceil((scanOptions.maxPages * scanOptions.delay) / 1000),
+        message: 'Scan queued for processing'
+      });
+    } else {
+      // No Redis/queue available - process immediately in background
+      scanResults.set(scanId, {
+        scanId,
+        status: 'processing',
+        progress: 0,
+        url,
+        createdAt: new Date().toISOString()
+      });
+      
+      logger.info(`Scan initiated (direct processing): ${scanId} for ${url}`);
+      
+      // Process scan in background
+      processScanDirectly(scanId, url, scanOptions);
+      
+      res.json({
+        scanId,
+        status: 'processing',
+        estimatedTime: Math.ceil((scanOptions.maxPages * scanOptions.delay) / 1000),
+        message: 'Scan started (direct processing)'
+      });
+    }
   } catch (error) {
     logger.error('Error initiating scan:', error);
     res.status(500).json({ error: 'Failed to initiate scan' });
@@ -326,7 +372,62 @@ app.get('/api/batch/:batchId/status', authenticateAPIKey, async (req, res) => {
   });
 });
 
-// Process scan jobs
+// Function to process scan directly without queue
+async function processScanDirectly(scanId, url, options) {
+  try {
+    logger.info(`Processing scan ${scanId} for ${url}`);
+    
+    // Get scan object
+    const scan = scanResults.get(scanId);
+    if (!scan) {
+      logger.error(`Scan ${scanId} not found`);
+      return;
+    }
+    
+    const scanner = new WebsiteScanner(options);
+    
+    // Set up progress reporting
+    scanner.on('progress', (data) => {
+      if (scan) {
+        scan.progress = data.progress;
+        scan.pagesScanned = data.pagesScanned;
+        scan.message = data.message;
+      }
+    });
+    
+    // Execute the scan
+    const results = await scanner.crawl(url);
+    
+    // Store results
+    if (scan) {
+      scan.status = 'completed';
+      scan.completedAt = new Date().toISOString();
+      scan.domain = results.domain;
+      scan.statistics = results.statistics;
+      scan.pages = results.pages;
+      scan.siteMap = results.siteMap;
+      scan.message = 'Scan completed successfully';
+      scan.progress = 100;
+    }
+    
+    logger.info(`Scan completed: ${scanId}`);
+    return results;
+  } catch (error) {
+    logger.error(`Scan failed for ${scanId}:`, error);
+    
+    const scan = scanResults.get(scanId);
+    if (scan) {
+      scan.status = 'failed';
+      scan.error = error.message;
+      scan.message = 'Scan failed: ' + error.message;
+    }
+    
+    throw error;
+  }
+}
+
+// Process scan jobs (if queue is available)
+if (scanQueue) {
 scanQueue.process(async (job) => {
   const { scanId, url, options } = job.data;
   
@@ -381,6 +482,7 @@ scanQueue.process(async (job) => {
     throw error;
   }
 });
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -399,9 +501,17 @@ app.use((req, res) => {
 // Start server
 async function startServer() {
   try {
-    // Connect to Redis
-    await redisClient.connect();
-    logger.info('Connected to Redis');
+    // Try to connect to Redis, but don't fail if it's not available
+    if (redisClient) {
+      try {
+        await redisClient.connect();
+        logger.info('Connected to Redis');
+      } catch (redisError) {
+        logger.warn('Redis not available, running without caching:', redisError.message);
+      }
+    } else {
+      logger.info('Running without Redis (disabled)');
+    }
     
     // Start Express server
     app.listen(PORT, () => {
@@ -417,8 +527,8 @@ async function startServer() {
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down gracefully');
-  await scanQueue.close();
-  await redisClient.quit();
+  if (scanQueue) await scanQueue.close();
+  if (redisClient) await redisClient.quit();
   process.exit(0);
 });
 

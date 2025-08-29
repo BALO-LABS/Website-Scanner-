@@ -1,9 +1,11 @@
 // RAG Collector API Testing Interface
 // Main JavaScript file for API endpoint testing
 
-// Configuration
-const DEFAULT_API_BASE = 'http://localhost:3000';
+// Configuration - Auto-detect API endpoint
+const isNetlify = window.location.hostname.includes('netlify.app') || window.location.hostname.includes('netlify.com');
+const DEFAULT_API_BASE = isNetlify ? '' : 'http://localhost:3000';
 let API_BASE = DEFAULT_API_BASE;
+const IS_SERVERLESS = isNetlify;
 let currentScanId = null;
 let autoRefreshInterval = null;
 let startTime = null;
@@ -61,14 +63,14 @@ async function checkAPIStatus() {
         const response = await fetch(`${API_BASE}/api/health`);
         if (response.ok) {
             indicator.classList.add('online');
-            text.textContent = 'API Server Online';
+            text.textContent = isNetlify ? 'Netlify Functions Online' : 'API Server Online';
         } else {
             indicator.classList.remove('online');
-            text.textContent = 'API Server Offline';
+            text.textContent = isNetlify ? 'Netlify Functions Offline' : 'API Server Offline';
         }
     } catch (error) {
         indicator.classList.remove('online');
-        text.textContent = 'API Server Unreachable';
+        text.textContent = isNetlify ? 'Netlify Functions Unreachable' : 'API Server Unreachable';
     }
 }
 
@@ -81,10 +83,16 @@ function loadSavedSettings() {
         });
     }
 
-    const savedServer = localStorage.getItem('apiServer');
-    if (savedServer) {
-        API_BASE = savedServer;
-        document.getElementById('health-server').value = savedServer;
+    // Don't override server URL if on Netlify
+    if (!isNetlify) {
+        const savedServer = localStorage.getItem('apiServer');
+        if (savedServer) {
+            API_BASE = savedServer;
+            document.getElementById('health-server').value = savedServer;
+        }
+    } else {
+        // On Netlify, show the live URL
+        document.getElementById('health-server').value = window.location.origin;
     }
 
     const savedScanId = localStorage.getItem('lastScanId');

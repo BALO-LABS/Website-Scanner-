@@ -1,0 +1,48 @@
+{
+  "date": "2025-08-29T05:54:13.644Z",
+  "previousScan": {
+    "pages": 14,
+    "words": 29390,
+    "quality": 68
+  },
+  "discovered": {
+    "totalUrls": 1355,
+    "departments": [
+      "en",
+      "ru",
+      "students-gate",
+      "faculty-gate",
+      "%d7%a1%d7%a4%d7%a8-%d7%98%d7%9c%d7%a4%d7%95%d7%a0%d7%99%d7%9d",
+      "administrativesystems",
+      "vrector",
+      "human-resources",
+      "about",
+      "academy_industry",
+      "greencampus"
+    ],
+    "languages": {
+      "he": 12,
+      "en": 1,
+      "ru": 1,
+      "ar": 0
+    }
+  },
+  "projections": {
+    "totalPages": 500,
+    "scanTime": "15-20 minutes",
+    "dataSize": "10-15 MB",
+    "languages": 4,
+    "departments": 20,
+    "courses": 200
+  },
+  "recommendations": {
+    "maxPages": 200,
+    "maxDepth": 4,
+    "targetedUrls": [
+      "https://www.ariel.ac.il/wp/en/schools/",
+      "https://www.ariel.ac.il/wp/research/",
+      "https://www.ariel.ac.il/wp/departments/",
+      "https://www.ariel.ac.il/wp/library/"
+    ]
+  }
+}

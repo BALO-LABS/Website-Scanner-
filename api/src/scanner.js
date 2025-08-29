@@ -59,46 +59,51 @@ class WebsiteScanner extends EventEmitter {
     
     const urlLower = url.toLowerCase();
     
-    // Skip file extensions
+    // Skip file extensions (but not .html)
     const skipExtensions = [
       '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
       '.zip', '.rar', '.jpg', '.jpeg', '.png', '.gif', '.svg',
-      '.mp3', '.mp4', '.avi', '.mov', '.css', '.js'
+      '.mp3', '.mp4', '.avi', '.mov', '.css', '.js', '.ico',
+      '.woff', '.woff2', '.ttf', '.eot'
     ];
     
-    if (skipExtensions.some(ext => urlLower.includes(ext))) {
+    // Check if URL ends with these extensions (more accurate)
+    if (skipExtensions.some(ext => urlLower.endsWith(ext))) {
       return false;
     }
     
-    // Skip user-specific and transactional pages
+    // Skip only truly problematic patterns
     const skipPatterns = [
       '/login', '/logout', '/signin', '/signup', '/register',
-      '/cart', '/checkout', '/payment', '/account', '/profile',
-      '/admin', '/dashboard', '/settings', '/preferences',
-      '/search?', '/filter?', '?sort=', '?page=',
-      '/download/', '/print/'
+      '/cart', '/checkout', '/payment',
+      '/wp-admin', '/_next/',
+      'mailto:', 'tel:', 'javascript:'
     ];
     
     if (skipPatterns.some(pattern => urlLower.includes(pattern))) {
       return false;
     }
     
-    // If page types filter is specified, prioritize those
+    // If page types filter is specified, prioritize those but don't exclude others
     if (this.options.pageTypes && this.options.pageTypes.length > 0) {
       const priorityPatterns = {
         'FAQ': ['/faq', '/faqs', '/questions'],
-        'Documentation': ['/docs', '/documentation', '/manual'],
-        'Support': ['/support', '/help', '/assistance'],
-        'Guide': ['/guide', '/tutorial', '/how-to'],
-        'API': ['/api', '/developer', '/reference']
+        'Documentation': ['/docs', '/documentation', '/manual', '/guide'],
+        'Support': ['/support', '/help', '/assistance', '/contact'],
+        'Guide': ['/guide', '/tutorial', '/how-to', '/getting-started'],
+        'API': ['/api', '/developer', '/reference'],
+        'Blog': ['/blog', '/news', '/articles', '/posts'],
+        'Changelog': ['/changelog', '/updates', '/release']
       };
       
+      // Check if URL matches priority patterns
       for (const pageType of this.options.pageTypes) {
         const patterns = priorityPatterns[pageType];
         if (patterns && patterns.some(pattern => urlLower.includes(pattern))) {
-          return true;
+          return true; // Prioritize these
         }
       }
+      // Don't exclude other pages, just deprioritize them
     }
     
     return true;
@@ -132,7 +137,27 @@ class WebsiteScanner extends EventEmitter {
     const metaDescription = $('meta[name="description"]').attr('content') || '';
     const metaKeywords = $('meta[name="keywords"]').attr('content') || '';
     
-    // Extract structured content
+    // Extract links BEFORE modifying the DOM
+    const links = [];
+    const linkSet = new Set(); // Use a Set to avoid duplicates
+    $('a[href]').each((i, elem) => {
+      const href = $(elem).attr('href');
+      if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+        try {
+          const absoluteUrl = new URL(href, currentUrl).href;
+          const normalized = this.normalizeUrl(absoluteUrl);
+          if (normalized && !linkSet.has(normalized)) {
+            linkSet.add(normalized);
+            links.push(normalized);
+          }
+        } catch (error) {
+          // Log the error for debugging but continue
+          console.error(`Failed to process link: ${href} - ${error.message}`);
+        }
+      }
+    });
+    
+    // Extract structured content (this modifies the DOM)
     const fullContent = this.extractFullContent($);
     const wordCount = fullContent.text.split(/\s+/).filter(word => word.length > 0).length;
     
@@ -141,21 +166,6 @@ class WebsiteScanner extends EventEmitter {
     
     // Extract heading hierarchy
     const headingStructure = this.extractHeadingStructure($);
-    
-    // Extract links
-    const links = [];
-    $('a[href]').each((i, elem) => {
-      const href = $(elem).attr('href');
-      if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
-        try {
-          const absoluteUrl = new URL(href, currentUrl).href;
-          const normalized = this.normalizeUrl(absoluteUrl);
-          if (normalized) {
-            links.push(normalized);
-          }
-        } catch {}
-      }
-    });
     
     // Extract images with alt text
     const imageData = this.extractImageData($);
@@ -486,6 +496,8 @@ class WebsiteScanner extends EventEmitter {
         message: `Scanning: ${currentUrl.substring(0, 50)}...`
       });
       
+      console.log(`[${this.pagesScanned}/${this.options.maxPages}] Crawling (depth ${depth}): ${currentUrl}`);
+      
       // Fetch and parse page
       const html = await this.fetchPage(currentUrl);
       if (html) {
@@ -493,12 +505,17 @@ class WebsiteScanner extends EventEmitter {
         pageData.depth = depth;
         pageData.parent = parent;
         
+        console.log(`  Found ${pageData.links.length} links, Type: ${pageData.pageType}, Quality: ${pageData.qualityScore}%`);
+        
         // Apply quality filter if specified
         if (pageData.qualityScore >= this.options.minQualityScore) {
           this.siteMap.set(currentUrl, pageData);
+        } else {
+          console.log(`  Skipped due to low quality score`);
         }
         
         // Add links to queue
+        let addedCount = 0;
         for (const link of pageData.links) {
           if (this.shouldCrawl(link)) {
             this.queue.push({
@@ -506,8 +523,12 @@ class WebsiteScanner extends EventEmitter {
               depth: depth + 1,
               parent: currentUrl
             });
+            addedCount++;
           }
         }
+        console.log(`  Added ${addedCount} new links to queue (queue size: ${this.queue.length})`);
+      } else {
+        console.log(`  Failed to fetch page`);
       }
       
       // Delay between requests
