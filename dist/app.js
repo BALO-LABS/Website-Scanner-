@@ -29,10 +29,21 @@ class ProxyManager {
                 name: 'cors-anywhere', 
                 buildUrl: (url) => `https://cors-anywhere.herokuapp.com/${url}`,
                 priority: 5
+            },
+            { 
+                name: 'whateverorigin', 
+                buildUrl: (url) => `https://whateverorigin.herokuapp.com/get?url=${encodeURIComponent(url)}`,
+                priority: 6,
+                parseResponse: async (response) => {
+                    const data = await response.json();
+                    return data.contents;
+                }
             }
         ];
         this.workingProxies = new Map(); // Cache working proxies per domain
         this.currentProxyIndex = 0;
+        this.failedProxies = new Set(); // Track failed proxies
+        this.proxyFailures = 0; // Count total failures
     }
     
     async fetchWithFallback(targetUrl, timeout = 8000) {
@@ -44,23 +55,34 @@ class ProxyManager {
         // Try cached working proxy first
         if (this.workingProxies.has(domain)) {
             const cachedProxy = this.workingProxies.get(domain);
-            try {
-                const proxyUrl = cachedProxy.buildUrl(targetUrl);
-                const response = await this.fetchWithTimeout(proxyUrl, timeout);
-                if (response.ok) {
-                    const html = await response.text();
-                    if (this.isValidHTML(html)) {
-                        console.log(`✓ Cache hit: ${cachedProxy.name} for ${domain}`);
-                        this.updateProxyStatus(`Using ${cachedProxy.name}`, 'success');
-                        return html;
+            if (!this.failedProxies.has(cachedProxy.name)) {
+                try {
+                    const proxyUrl = cachedProxy.buildUrl(targetUrl);
+                    const response = await this.fetchWithTimeout(proxyUrl, timeout);
+                    if (response.ok) {
+                        let html;
+                        if (cachedProxy.parseResponse) {
+                            html = await cachedProxy.parseResponse(response);
+                        } else {
+                            html = await response.text();
+                        }
+                        if (this.isValidHTML(html)) {
+                            console.log(`✓ Cache hit: ${cachedProxy.name} for ${domain}`);
+                            this.updateProxyStatus(`Using ${cachedProxy.name}`, 'success');
+                            return html;
+                        }
                     }
+                } catch {
+                    this.failedProxies.add(cachedProxy.name);
                 }
-            } catch {}
+            }
         }
         
         // Try all proxies in order
         for (let i = 0; i < this.proxies.length; i++) {
             const proxy = this.proxies[i];
+            if (this.failedProxies.has(proxy.name)) continue;
+            
             try {
                 console.log(`Trying ${proxy.name}...`);
                 this.updateProxyStatus(`Trying ${proxy.name} (${i + 1}/${this.proxies.length})`, 'trying');
@@ -69,17 +91,24 @@ class ProxyManager {
                 const response = await this.fetchWithTimeout(proxyUrl, timeout);
                 
                 if (response.ok) {
-                    const html = await response.text();
+                    let html;
+                    if (proxy.parseResponse) {
+                        html = await proxy.parseResponse(response);
+                    } else {
+                        html = await response.text();
+                    }
                     // Validate HTML content
                     if (this.isValidHTML(html)) {
                         console.log(`✓ Success with ${proxy.name}`);
                         this.workingProxies.set(domain, proxy);
                         this.updateProxyStatus(`Connected via ${proxy.name}`, 'success');
+                        this.proxyFailures = 0; // Reset failure count on success
                         return html;
                     }
                 }
             } catch (error) {
                 console.log(`✗ Failed ${proxy.name}: ${error.message}`);
+                this.failedProxies.add(proxy.name);
             }
         }
         
@@ -97,13 +126,69 @@ class ProxyManager {
             }
         } catch {}
         
-        this.updateProxyStatus('All proxies failed', 'error');
+        this.proxyFailures++;
+        
+        // Show detailed error message for user
+        if (this.proxyFailures > 3) {
+            this.updateProxyStatus('CORS proxy limitations detected. Consider using the API for complex sites.', 'error');
+            this.showApiRecommendation();
+        } else {
+            this.updateProxyStatus('All proxies failed for this page', 'error');
+        }
+        
         throw new Error('All proxy methods failed');
     }
     
     isValidHTML(html) {
-        return html && html.length > 100 && 
-               (html.includes('<html') || html.includes('<!DOCTYPE') || html.includes('<HTML') || html.includes('<body'));
+        // More robust HTML validation
+        if (!html || html.length < 100) return false;
+        
+        // Check for common HTML elements
+        const hasHTMLElements = html.includes('<html') || html.includes('<!DOCTYPE') || 
+                               html.includes('<HTML') || html.includes('<body') || 
+                               html.includes('<head') || html.includes('<div') ||
+                               html.includes('<a ') || html.includes('<a>');
+        
+        // Check for JavaScript challenge pages (common with proxies)
+        const isChallengePage = html.includes('challenge-platform') || 
+                               html.includes('cf-browser-verification') ||
+                               html.includes('Server-side requests are not allowed') ||
+                               html.includes('rbzns') || // Ariel University protection
+                               html.includes('Access denied');
+        
+        return hasHTMLElements && !isChallengePage;
+    }
+    
+    showApiRecommendation() {
+        // Check if recommendation already exists
+        if (document.getElementById('apiRecommendation')) return;
+        
+        const recommendation = document.createElement('div');
+        recommendation.id = 'apiRecommendation';
+        recommendation.className = 'api-recommendation';
+        recommendation.innerHTML = `
+            <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 15px; margin: 20px 0;">
+                <h3 style="color: #856404; margin-top: 0;">⚠️ CORS Proxy Limitations Detected</h3>
+                <p style="color: #856404;">The browser-based scanner is limited by CORS proxy availability and may not work well with complex sites like universities or enterprise websites.</p>
+                <p style="color: #856404;"><strong>For better results, use our API:</strong></p>
+                <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto;">
+# Start the API server
+cd api && npm install && npm start
+
+# Make a scan request
+curl -X POST http://localhost:3000/api/scan \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: test-key" \\
+  -d '{"url": "${document.getElementById('urlInput')?.value || 'https://example.com'}", "maxPages": 50}'
+                </pre>
+                <p style="color: #856404; margin-bottom: 0;">The API runs server-side without CORS restrictions and can scan any website effectively.</p>
+            </div>
+        `;
+        
+        const container = document.querySelector('.container');
+        if (container) {
+            container.insertBefore(recommendation, document.getElementById('progressSection'));
+        }
     }
     
     async fetchWithTimeout(url, timeout) {
@@ -189,30 +274,29 @@ class WebsiteScanner {
         
         const urlLower = url.toLowerCase();
         
-        // Skip file extensions
-        const skipExtensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', 
-                              '.zip', '.rar', '.jpg', '.jpeg', '.png', '.gif', '.svg', 
-                              '.mp3', '.mp4', '.avi', '.mov', '.css', '.js'];
+        // Skip file extensions (but not .html) - check if URL ENDS with these
+        const skipExtensions = [
+            '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+            '.zip', '.rar', '.jpg', '.jpeg', '.png', '.gif', '.svg',
+            '.mp3', '.mp4', '.avi', '.mov', '.css', '.js', '.ico',
+            '.woff', '.woff2', '.ttf', '.eot'
+        ];
         
-        if (skipExtensions.some(ext => urlLower.includes(ext))) {
+        // More accurate check - only skip if URL ends with extension
+        if (skipExtensions.some(ext => urlLower.endsWith(ext))) {
             return false;
         }
         
-        // Skip user-specific and transactional pages - be more specific to avoid false positives
+        // Skip only truly problematic patterns (simplified like backend)
         const skipPatterns = [
             '/login', '/logout', '/signin', '/signup', '/register',
-            '/cart', '/checkout', '/payment', 
-            '/user/account', '/user/profile', '/my-account', '/myprofile',
-            '/wp-admin', '/admin/', '/administrator/',
-            '?search=', '?filter=', '?sort=', '?page=',
-            '/download.php', '/print.php'
+            '/cart', '/checkout', '/payment',
+            '/wp-admin', '/_next/',
+            'mailto:', 'tel:', 'javascript:'
         ];
         
-        // Check for exact pattern matches or at end of URL to avoid false positives
-        if (skipPatterns.some(pattern => {
-            return urlLower.includes(pattern) && 
-                   (urlLower.endsWith(pattern) || urlLower.includes(pattern + '/') || urlLower.includes(pattern + '?'));
-        })) {
+        // Simple includes check like backend
+        if (skipPatterns.some(pattern => urlLower.includes(pattern))) {
             return false;
         }
         
@@ -275,13 +359,23 @@ class WebsiteScanner {
         // Extract heading hierarchy for context
         const headingStructure = this.extractHeadingStructure(doc);
         
-        // Enhanced link extraction
+        // Enhanced link extraction - extract BEFORE modifying DOM
         const links = new Set();
         const baseUrl = new URL(currentUrl);
         
-        // Multiple selectors for comprehensive link discovery
-        const linkSelectors = [
-            'a[href]',
+        // Find all links first, before any DOM manipulation
+        const allLinks = [];
+        
+        // Standard href links
+        doc.querySelectorAll('a[href]').forEach(elem => {
+            const href = elem.getAttribute('href');
+            if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+                allLinks.push(href);
+            }
+        });
+        
+        // Additional link sources
+        const additionalSelectors = [
             'link[rel="canonical"]',
             'link[rel="alternate"]',
             'area[href]',
@@ -290,36 +384,47 @@ class WebsiteScanner {
             '[data-link]'
         ];
         
-        linkSelectors.forEach(selector => {
+        additionalSelectors.forEach(selector => {
             doc.querySelectorAll(selector).forEach(elem => {
                 const href = elem.getAttribute('href') || 
                            elem.getAttribute('data-href') || 
                            elem.getAttribute('data-url') ||
                            elem.getAttribute('data-link');
-                           
-                if (href && !href.startsWith('#') && !href.startsWith('javascript:') && !href.startsWith('mailto:') && !href.startsWith('tel:')) {
-                    try {
-                        // Handle various URL formats
-                        let absoluteUrl;
-                        if (href.startsWith('http://') || href.startsWith('https://')) {
-                            absoluteUrl = href;
-                        } else if (href.startsWith('//')) {
-                            absoluteUrl = baseUrl.protocol + href;
-                        } else if (href.startsWith('/')) {
-                            absoluteUrl = baseUrl.origin + href;
-                        } else {
-                            // Relative URL
-                            const currentPath = currentUrl.endsWith('/') ? currentUrl : currentUrl.substring(0, currentUrl.lastIndexOf('/') + 1);
-                            absoluteUrl = currentPath + href;
-                        }
-                        
-                        const normalized = this.normalizeUrl(absoluteUrl);
-                        if (normalized && this.isInternalLink(normalized)) {
-                            links.add(normalized);
-                        }
-                    } catch {}
+                if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+                    allLinks.push(href);
                 }
             });
+        });
+        
+        // Process all collected links
+        allLinks.forEach(href => {
+            if (!href || href.startsWith('#') || href.startsWith('javascript:') || 
+                href.startsWith('mailto:') || href.startsWith('tel:')) {
+                return;
+            }
+            
+            try {
+                // Handle various URL formats
+                let absoluteUrl;
+                if (href.startsWith('http://') || href.startsWith('https://')) {
+                    absoluteUrl = href;
+                } else if (href.startsWith('//')) {
+                    absoluteUrl = baseUrl.protocol + href;
+                } else if (href.startsWith('/')) {
+                    absoluteUrl = baseUrl.origin + href;
+                } else {
+                    // Relative URL
+                    const currentPath = currentUrl.endsWith('/') ? currentUrl : currentUrl.substring(0, currentUrl.lastIndexOf('/') + 1);
+                    absoluteUrl = currentPath + href;
+                }
+                
+                const normalized = this.normalizeUrl(absoluteUrl);
+                if (normalized && this.isInternalLink(normalized)) {
+                    links.add(normalized);
+                }
+            } catch (error) {
+                console.log(`Failed to process link: ${href} - ${error.message}`);
+            }
         });
         
         // Also try to find links in onclick attributes and JavaScript
