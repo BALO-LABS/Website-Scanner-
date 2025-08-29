@@ -19,7 +19,7 @@
 
 [[redirects]]
   from = "/api/scan"
-  to = "/.netlify/functions/api-scan-simple"
+  to = "/.netlify/functions/api-scan-improved"
   status = 200
 
 [[redirects]]
