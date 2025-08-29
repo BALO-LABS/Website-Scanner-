@@ -531,6 +531,10 @@
                 <span class="status-indicator" id="statusIndicator"></span>
                 <span id="statusText">Checking API status...</span>
             </div>
+            <div style="margin-top: 20px; padding: 15px; background: linear-gradient(135deg, #667eea20, #764ba220); border-radius: 10px; border-left: 4px solid var(--primary);">
+                <strong>☁️ Cloud API Active</strong> - Running on Netlify Functions (Serverless)
+                <br><small>• Max 5 pages per scan • 10-second timeout • No setup required</small>
+            </div>
         </div>
 
         <!-- Main Content -->
@@ -551,16 +555,16 @@
                             Start Scan
                         </button>
                     </li>
-                    <li class="endpoint-item">
-                        <button class="endpoint-btn" data-endpoint="status">
+                    <li class="endpoint-item" style="opacity: 0.5; pointer-events: none;" title="Not available in serverless mode">
+                        <button class="endpoint-btn" data-endpoint="status" disabled>
                             <span class="method-badge get">GET</span>
-                            Scan Status
+                            Scan Status ❌
                         </button>
                     </li>
-                    <li class="endpoint-item">
-                        <button class="endpoint-btn" data-endpoint="results">
+                    <li class="endpoint-item" style="opacity: 0.5; pointer-events: none;" title="Not available in serverless mode">
+                        <button class="endpoint-btn" data-endpoint="results" disabled>
                             <span class="method-badge get">GET</span>
-                            Scan Results
+                            Scan Results ❌
                         </button>
                     </li>
                     <li class="endpoint-item">
@@ -569,16 +573,16 @@
                             Extract Page
                         </button>
                     </li>
-                    <li class="endpoint-item">
-                        <button class="endpoint-btn" data-endpoint="export">
+                    <li class="endpoint-item" style="opacity: 0.5; pointer-events: none;" title="Not available in serverless mode">
+                        <button class="endpoint-btn" data-endpoint="export" disabled>
                             <span class="method-badge post">POST</span>
-                            Export Data
+                            Export Data ❌
                         </button>
                     </li>
-                    <li class="endpoint-item">
-                        <button class="endpoint-btn" data-endpoint="batch">
+                    <li class="endpoint-item" style="opacity: 0.5; pointer-events: none;" title="Not available in serverless mode">
+                        <button class="endpoint-btn" data-endpoint="batch" disabled>
                             <span class="method-badge post">POST</span>
-                            Batch Scan
+                            Batch Scan ❌
                         </button>
                     </li>
                 </ul>
@@ -603,7 +607,7 @@
                         <h3>Configuration</h3>
                         <div class="form-group">
                             <label>API Server URL</label>
-                            <input type="text" class="form-control" id="health-server" value="http://localhost:3000">
+                            <input type="text" class="form-control" id="health-server" value="https://websitescanner.netlify.app">
                             <div class="help-text">The base URL of your API server</div>
                         </div>
                         <button class="btn btn-primary" onclick="testHealth()">
@@ -631,7 +635,7 @@
                             /api/scan
                         </div>
                         <p class="endpoint-description">
-                            Initiate a comprehensive website crawl and content extraction. Returns a scan ID for tracking progress.
+                            Quick website scan with instant results. Limited to 5 pages due to serverless constraints. Results returned immediately.
                         </p>
                     </div>
 
@@ -645,7 +649,7 @@
                         
                         <div class="form-group">
                             <label>Website URL</label>
-                            <input type="text" class="form-control" id="scan-url" placeholder="https://example.com">
+                            <input type="text" class="form-control" id="scan-url" value="https://balolabs.com" placeholder="https://example.com">
                             <div class="url-suggestions">
                                 <span class="suggestion-chip" onclick="setScanUrl('https://balolabs.com')">balolabs.com</span>
                                 <span class="suggestion-chip" onclick="setScanUrl('https://example.com')">example.com</span>
@@ -660,11 +664,11 @@
                             <div class="options-grid">
                                 <div class="option-item">
                                     <label>Max Pages:</label>
-                                    <input type="number" class="form-control" id="scan-maxpages" value="20" min="1" max="100">
+                                    <input type="number" class="form-control" id="scan-maxpages" value="3" min="1" max="5">
                                 </div>
                                 <div class="option-item">
                                     <label>Max Depth:</label>
-                                    <input type="number" class="form-control" id="scan-maxdepth" value="2" min="1" max="5">
+                                    <input type="number" class="form-control" id="scan-maxdepth" value="1" min="1" max="2">
                                 </div>
                                 <div class="option-item">
                                     <label>Delay (ms):</label>
@@ -744,7 +748,7 @@
                         </div>
                         <div class="form-group">
                             <label>Scan ID</label>
-                            <input type="text" class="form-control" id="status-scanid" placeholder="Enter scan ID from previous scan">
+                            <input type="text" class="form-control" id="status-scanid" value="scan-example-123" placeholder="Enter scan ID from previous scan">
                             <div class="help-text">Get this from the Start Scan response</div>
                         </div>
                         
@@ -812,7 +816,7 @@
                         </div>
                         <div class="form-group">
                             <label>Scan ID</label>
-                            <input type="text" class="form-control" id="results-scanid" placeholder="Enter scan ID">
+                            <input type="text" class="form-control" id="results-scanid" value="scan-example-123" placeholder="Enter scan ID">
                         </div>
 
                         <button class="btn btn-primary" onclick="getResults()">
@@ -864,7 +868,7 @@
                         </div>
                         <div class="form-group">
                             <label>Page URL</label>
-                            <input type="text" class="form-control" id="extract-url" placeholder="https://example.com/page">
+                            <input type="text" class="form-control" id="extract-url" value="https://balolabs.com/about-us" placeholder="https://example.com/page">
                             <div class="url-suggestions">
                                 <span class="suggestion-chip" onclick="setExtractUrl('https://balolabs.com/about-us')">balolabs.com/about</span>
                                 <span class="suggestion-chip" onclick="setExtractUrl('https://example.com/faq')">example.com/faq</span>
@@ -927,7 +931,7 @@
                         </div>
                         <div class="form-group">
                             <label>Scan ID</label>
-                            <input type="text" class="form-control" id="export-scanid" placeholder="Enter scan ID">
+                            <input type="text" class="form-control" id="export-scanid" value="scan-example-123" placeholder="Enter scan ID">
                         </div>
                         <div class="form-group">
                             <label>Export Format</label>
@@ -978,7 +982,9 @@
                             <label>URLs (one per line)</label>
                             <textarea class="form-control textarea" id="batch-urls" placeholder="https://example1.com
 https://example2.com
-https://example3.com"></textarea>
+https://example3.com">https://balolabs.com
+https://example.com
+https://nodejs.org</textarea>
                             <div class="help-text">Enter up to 10 URLs, one per line</div>
                         </div>
                         
@@ -987,11 +993,11 @@ https://example3.com"></textarea>
                             <div class="options-grid">
                                 <div class="option-item">
                                     <label>Max Pages:</label>
-                                    <input type="number" class="form-control" id="batch-maxpages" value="10" min="1" max="50">
+                                    <input type="number" class="form-control" id="batch-maxpages" value="3" min="1" max="5">
                                 </div>
                                 <div class="option-item">
                                     <label>Max Depth:</label>
-                                    <input type="number" class="form-control" id="batch-maxdepth" value="2" min="1" max="3">
+                                    <input type="number" class="form-control" id="batch-maxdepth" value="1" min="1" max="2">
                                 </div>
                             </div>
                         </div>

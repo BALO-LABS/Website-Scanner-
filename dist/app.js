@@ -3,9 +3,10 @@
 
 // Configuration - Auto-detect API endpoint
 const isNetlify = window.location.hostname.includes('netlify.app') || window.location.hostname.includes('netlify.com');
-const DEFAULT_API_BASE = isNetlify ? '' : 'http://localhost:3000';
+const NETLIFY_API = 'https://websitescanner.netlify.app';
+const DEFAULT_API_BASE = isNetlify ? '' : NETLIFY_API;
 let API_BASE = DEFAULT_API_BASE;
-const IS_SERVERLESS = isNetlify;
+const IS_SERVERLESS = true; // Always use serverless since it's deployed
 let currentScanId = null;
 let autoRefreshInterval = null;
 let startTime = null;
@@ -83,16 +84,19 @@ function loadSavedSettings() {
         });
     }
 
-    // Don't override server URL if on Netlify
-    if (!isNetlify) {
-        const savedServer = localStorage.getItem('apiServer');
-        if (savedServer) {
-            API_BASE = savedServer;
-            document.getElementById('health-server').value = savedServer;
-        }
-    } else {
-        // On Netlify, show the live URL
+    // Set the server URL based on deployment
+    const savedServer = localStorage.getItem('apiServer');
+    if (savedServer && !isNetlify) {
+        API_BASE = savedServer;
+        document.getElementById('health-server').value = savedServer;
+    } else if (isNetlify) {
+        // On Netlify, use relative paths
+        API_BASE = '';
         document.getElementById('health-server').value = window.location.origin;
+    } else {
+        // Default to cloud API
+        API_BASE = NETLIFY_API;
+        document.getElementById('health-server').value = NETLIFY_API;
     }
 
     const savedScanId = localStorage.getItem('lastScanId');
@@ -215,10 +219,10 @@ async function testHealth() {
     const text = document.getElementById('statusText');
     if (response.ok) {
         indicator.classList.add('online');
-        text.textContent = 'API Server Online';
+        text.textContent = response.data.serverless ? 'Cloud API Online (Serverless)' : 'API Server Online';
     } else {
         indicator.classList.remove('online');
-        text.textContent = 'API Server Offline';
+        text.textContent = response.data.serverless ? 'Cloud API Offline' : 'API Server Offline';
     }
 }
 
